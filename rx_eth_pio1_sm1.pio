@@ -1,0 +1,50 @@
+
+.program rx_eth_pio1_sm1
+; Signal I2S out
+// 11 instructions
+    wait 1  GPIO    11 ; Attente du passage a 0 de LRCLK.
+    wait 0  GPIO    11 ; Pour une bonne synchro initiale sur LRCLK.
+.wrap_target ; 48 KHz : 1302 # pour l'etat haut, 1302 # pour l'etat bas.
+    set Y, 1
+    wait 0  GPIO    11
+encore:
+    set X, 31
+    
+loop:
+    wait 1  GPIO    10 ; Attente du passage a 0 de BCLK.
+    wait 0  GPIO    10
+    out PINS, 1
+    JMP X-- loop
+    wait 1  GPIO    11
+    JMP Y-- encore
+.wrap
+
+
+% c-sdk {
+static inline void rx_eth_pio1_sm1_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    pio_sm_config c = rx_eth_pio1_sm1_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    sm_config_set_out_pins(&c, pin, 1);
+    //sm_config_set_set_pins(&c, pin, 1);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    // Set this pin's GPIO function (connect PIO to the pad)    
+    pio_gpio_init(pio, pin);
+    pio_gpio_init(pio, 11);
+    pio_gpio_init(pio, 10);
+    //pio_gpio_init(pio, pin+3);
+    
+    //sm_config_set_clkdiv(&c, (float)(10000.0));
+    
+    sm_config_set_out_shift	(&c, false, true, 32);
+    sm_config_set_fifo_join	(&c, PIO_FIFO_JOIN_TX);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    //pio_sm_set_enabled(pio, sm, true);
+}
+%}

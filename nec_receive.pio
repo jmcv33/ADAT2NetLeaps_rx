@@ -1,0 +1,96 @@
+;
+; Copyright (c) 2021 mjcross
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Temps de cycle a 56 µs.
+; JMcV 2025 - Inspire de l'exemple PICO.
+.pio_version 0 // only requires PIO version 0
+
+.program nec_receive
+
+.wrap_target
+
+cherche_impulsion_sync:
+    set X, 20
+    wait 0 pin 0                                ; wait for the next burst to start
+; Si X=n, il s'ecoule 1+(BURST_LOOP_COUNTER+1) * 7 cycles, en comptant le
+; wait 0 pin 0 ci-dessus et jusqu'au mov ISR, NULL
+impulsion_sync_loop:
+    nop [4]
+    jmp pin cherche_impulsion_sync              
+    jmp X-- impulsion_sync_loop             
+; A ce stade, on arrive a la fin de l'impulsion de sync.
+    nop [19] ; On marque 2.24 ms.
+    nop [19]
+
+    ; On verifie que l'on a au moins 2 ms de silence (correspond aux 4.5 ms)
+    set X, 10
+silence_loop:
+    jmp pin suite_verif_silence
+    jmp cherche_impulsion_sync
+suite_verif_silence:
+    jmp X-- silence_loop
+
+; Lecture des 32 bits de donnees.                                                
+    mov ISR, NULL                               
+    set X, 31
+bit_suivant:                                 
+    wait 0 pin 0 ; Attente du front montant de l'impulsion de debut de bit.
+                 ; Deja a 0 si retour d'un bit a 0
+    wait 1 pin 0 ; Attente du front descendant de l'impulsion de debut de bit.
+    nop [13]     ; A l'issue de ce delai, broche a 1 si bit a 1. Sinon 0.                       
+    in PINS, 1             
+    jmp X-- bit_suivant
+.wrap
+
+
+% c-sdk {
+static inline void nec_receive_program_init (PIO pio, uint sm, uint offset, uint pin) {
+
+    // Set the GPIO function of the pin (connect the PIO to the pad)
+    //
+    pio_gpio_init(pio, pin);
+
+    // Set the pin direction to `input` at the PIO
+    //
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
+
+    // Create a new state machine configuration
+    //
+    pio_sm_config c = nec_receive_program_get_default_config (offset);
+
+    // configure the Input Shift Register
+    //
+    sm_config_set_in_shift (&c,
+                            false,       // shift right - false pour la telecommande Ebay.
+                            true,       // enable autopush
+                            32);        // autopush after 32 bits
+
+    // join the FIFOs to make a single large receive FIFO
+    //
+    sm_config_set_fifo_join (&c, PIO_FIFO_JOIN_RX);
+
+    // Map the IN pin group to one pin, namely the `pin`
+    // parameter to this function.
+    //
+    sm_config_set_in_pins (&c, pin);
+
+    // Map the JMP pin to the `pin` parameter of this function.
+    //
+    sm_config_set_jmp_pin (&c, pin);
+
+    // Set the clock divider to 10 ticks per 562.5us burst period
+    // Soit un temps de cycle de 56 µs.
+    float div = clock_get_hz (clk_sys) / (10.0 / 562.5e-6);
+    sm_config_set_clkdiv (&c, div);
+
+    // Apply the configuration to the state machine
+    //
+    pio_sm_init (pio, sm, offset, &c);
+
+    // Set the state machine running
+    //
+    pio_sm_set_enabled (pio, sm, true);
+}
+%}

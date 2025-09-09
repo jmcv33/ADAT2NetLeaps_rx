@@ -1,0 +1,44 @@
+
+.program rx_eth_pio0_sm0
+// 4 instructions
+// Generation de MCLK et de BCLK.
+    set X, 0
+.wrap_target
+encore:
+    wait 0  GPIO    15
+    mov PINS, X
+    ;wait 1  GPIO    15
+    jmp X--, encore [2]; [1] ; Delai pour attendre la remontee sur GPIO1
+    ;jmp X--, saut
+;saut:
+;   nop
+.wrap
+
+% c-sdk {
+static inline void pio0_sm0_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    pio_sm_config c = rx_eth_pio0_sm0_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `pin`
+    // parameter to this function.
+    sm_config_set_out_pins(&c, pin, 3);
+    //sm_config_set_set_pins(&c, pin, 2);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 3, true);
+
+    // Set this pin's GPIO function (connect PIO to the pad)    
+    pio_gpio_init(pio, pin);
+    pio_gpio_init(pio, pin+1);
+    pio_gpio_init(pio, pin+2);
+    //pio_gpio_init(pio, pin+3);
+
+    //hw_set_bits(&pio->input_sync_bypass, 1u << 15);
+    
+    //sm_config_set_clkdiv(&c, (float)(60));
+    
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    //pio_sm_set_enabled(pio, sm, true);
+}
+%}
