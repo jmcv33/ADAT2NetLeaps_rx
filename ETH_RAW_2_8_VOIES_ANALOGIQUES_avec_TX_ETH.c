@@ -1,73 +1,38 @@
-//https://chummersone.github.io/qformat.html#arithmetic
-//https://electronics.stackexchange.com/questions/440908/interpretation-of-i2s-data
-
-// GPIO1 : 24.476 MHz
-// Sorties I2S:
-// GPIO2 : MCLK
-// GPIO4 : BCLK
-// GPIO5 : LRCLK
-// GPIO6 : DATA
-
-// GPIO6 : BP1
-// GPIO7 : BP2
-
-// Sur platine 1:
-// LED D1:GPIO20/GPIO21:Rouge:1 sur GPIO20
-// LED D2:GPIO18/GPIO19:Rouge:1 sur GPIO18
-// LED D3:GPIO16/GPIO17:Rouge:1 sur GPIO17
-
-// Sur platine 2:
-// LED D1:GPIO20/GPIO21:Rouge:1 sur GPIO21
-// LED D2:GPIO18/GPIO19:Rouge:1 sur GPIO19
-// LED D3:GPIO16/GPIO17:Rouge:1 sur GPIO16
-
-//openocd -f scripts/interface/cmsis-dap.cfg -c "adapter speed 5000" -f scripts/target/rp2040.cfg -c "program D:/sono/Broadionet/RP2040/RX_ETH/build/rx_eth.elf verify reset"
-// Tire 260 mA sous 12 V, charge asymetrique sur ampli HIFI.
-
-/*
-Donnees de configuration en flash data:
-Rang de l'octet     signification
-0                   0xAA, si absent, on fixe les valeurs pas defaut
-1                   0x55, si absent, on fixe les valeurs pas defaut
-2                   Canal en cours sur sortie analogique L, 0 par defaut
-3                   Canal en cours sur sortie analogique R, 3 par defaut
-4                   Si 0x00, pas de somme des canaux sur sortie analogique L, par defaut
-                    Si 0xFF, somme des canaux sur sortie analigique L en cours
-5                   Si 0x00, pas de mute sur la sortie analogique L
-                    Si 0xFF, mute en cours sur la sortie analogique L, par defaut
-6                   Si 0x00, pas de mute sur la sortie analogique R
-                    Si 0xFF, mute en cours sur la sortie analogique R, par defaut
-*/
+// ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH.c
+// Raspberry PICO 2, RP2350
+// Auteur : jeanmarc.villers@wanadoo.fr
+// Licence Creative Commons CC BY-NC-SA
 #include <string.h>
 #include <stdlib.h>
-
 #include "pico/stdlib.h"
-#include "rx_eth_pio0_sm0.pio.h"
-#include "rx_eth_pio0_sm1.pio.h"
-//#include "rx_eth_pio0_sm2.pio.h"
-//#include "rx_eth_pio1_sm0.pio.h"
 #include "rx_eth_pio1_sm1.pio.h"
 #include "hardware/spi.h"
 #include "hardware/dma.h"
 #include "hardware/flash.h"
-#include "pico/multicore.h"
-
-#include "Routines_W5500.h"
-//#include "pio_spi.h"
-
-#include "nec_receive.h"
-// import the assembled PIO state machine program
 #include "hardware/clocks.h"
+#include "pico/multicore.h"
+#include "rx_eth_pio0_sm0.pio.h"
+#include "rx_eth_pio0_sm1.pio.h"
+#include "Routines_W5500.h"
+#include "nec_receive.h"
 #include "nec_receive.pio.h"
 
-// MAC module 1
-//uint8_t adresse_MAC[6] = {0x00, 0x00, 0x00, 0x12, 0x09, 0x92};
-// MAC module 2
-uint8_t adresse_MAC[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
-#define PORT_TCP 0x1012 // Ecoute TCP en 4114 
+uint8_t adresse_MAC_srce[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
 
-/* LEDs Module 1 */
-/*
+// MAC source. Tous les recepteurs ont cette MAC en MAC source.
+#define MAC_dest_pF 0x00
+#define MAC_dest_2  0x00
+#define MAC_dest_3  0x00
+#define MAC_dest_4  0x01
+#define MAC_dest_5  0x07
+#define MAC_dest_pf 0x15
+
+// Commande des LEDs selon le boitier. Depend du sens des broches impossibles
+// a reperer... Important pour le rouge et le vert.
+// D1 : LED d'etat du systeme
+// D2 : LED d'etat de la sortie gauche
+// D3 : LED d'etat de la sortie droite
+// LEDs Module 1
 #define D1_ROUGE gpio_put_masked(0x00300000, 0x00200000)
 #define D1_VERTE gpio_put_masked(0x00300000, 0x00100000)
 #define D2_VERTE gpio_put_masked(0x00000030, 0x00000020)
@@ -77,8 +42,9 @@ uint8_t adresse_MAC[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
 #define D1_OFF gpio_put_masked(0x00300000, 0x00000000)
 #define D2_OFF gpio_put_masked(0x00000030, 0x00000000)
 #define D3_OFF gpio_put_masked(0x00000003, 0x00000000)
-*/
-/* LEDs Module 2 */
+
+// LEDs Module 2
+/*
 #define D1_ROUGE gpio_put_masked(0x00300000, 0x00200000)
 #define D1_VERTE gpio_put_masked(0x00300000, 0x00100000)
 #define D2_ROUGE gpio_put_masked(0x00000030, 0x00000020)
@@ -88,23 +54,22 @@ uint8_t adresse_MAC[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
 #define D1_OFF gpio_put_masked(0x00300000, 0x00000000)
 #define D2_OFF gpio_put_masked(0x00000030, 0x00000000)
 #define D3_OFF gpio_put_masked(0x00000003, 0x00000000)
+*/
 
-const uint LED_PIN = PICO_DEFAULT_LED_PIN;    
-uint8_t tampon_tx[640], tampon_rx[640];
-int i, i_core1, j, i_tmp, j_tmp;
-uint8_t uint8_tmp, uint8_tmp_core1;
-uint8_t buffer_4_i2s[384]; // 24 echantillons, 1 pour voie L, 1 pour voie R, le tout x 2
-int dma_chan_4_i2s_1, dma_chan_4_i2s_2;
+uint8_t buffer_tx_W5500[512], buffer_rx_W5500[512];
+uint32_t i, i_core1, j;
+uint8_t buffer_4_i2s[256]; // 32 echantillons par voies
+uint32_t dma_chan_4_i2s_1, dma_chan_4_i2s_2;
 int32_t echant1_int32, echant2_int32, somme_echant_int32;
-
-uint sm_pio1_sm0;
-
 bool flag_it, flag_it_prec;
-
 uint16_t PTR_S0_RX_READ, PTR_S0_TX_WR;
-bool reception_ok;
-uint8_t compteur_48_octets;
 
+// Toute configuration depuis la telecommande est memorisee en FLASH
+// afin d'etre recuperee apres une remise sous tension.
+// L'ecriture / lecture en flash (Circuit-integre a cote du RP2350 en liaison QSPI)
+// est faite selon l'exemple:
+// https://github.com/raspberrypi/pico-examples/tree/master/flash/program
+// Voir fichier notes.txt 
 #define FLASH_TARGET_OFFSET (256 * 1024)
 const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
 uint8_t  flash_data[FLASH_PAGE_SIZE];
@@ -121,11 +86,10 @@ uint64_t t_debut_data_invalides;
 bool data_non_valides; // Au cas ou des donnees "bidons" sont recues et
                        // causent des artefacts audio. Cela peut etre
                        // cause par une mauvaise synchro ADAT sur l'emetteur.
-
-int rx_sm;
+uint32_t rx_sm;
 
 // canal_ADAT_pour_voie_L et canal_ADAT_pour_voie_R contiennent les offsets
-// dans le tampon de reception W5500,
+// dans le tampon du W5500 en reception,
 // soit 0 pour le canal ADAT 1, 3 pour le canal ADAT 2, 6 pour le canal ADAT 3, ...
 uint8_t canal_ADAT_pour_voie_L, canal_ADAT_pour_voie_R;
 
@@ -136,25 +100,15 @@ bool mute_l, mute_r;
 uint64_t t_debut_wd_lien_eth;
 bool liaison_eth_ok;
 
-bool flg_dbg;
-
-void maj_flash_data(void);
 void core1_entry(void);
 
-void maj_flash_data()
-    {
-        flash_data[0] = 0xAA;
-        flash_data[1] = 0x55;
-        flash_data[2] = canal_ADAT_pour_voie_L;
-        flash_data[3] = canal_ADAT_pour_voie_R;
-        flash_data[4] = somme_des_canaux ? 0xFF : 0x00;
-        flash_data[5] = mute_l ? 0xFF : 0x00;
-        flash_data[6] = mute_r ? 0xFF : 0x00;        
-    }
-
+// Code pour le core 1.
+// Traitement:
+// - des ordres de la telecommande - Voir notes.txt;
+// - des clips;
+// - des LEDs.
 void core1_entry()
 {
-    //int rx_sm = nec_rx_init(pio1, 13);
     uint8_t rx_address, rx_data;
 
     touche1_tcde = TOUCHE_AUCUNE;
@@ -162,12 +116,14 @@ void core1_entry()
     
     while (1)
       {
+        // Si absence de reception Ethernet depuis plus de 1 ms
         if ((time_us_64() - t_debut_wd_lien_eth) > 1000)
             {
-                // Perte de liaison ETH
+                // En vu d'envoyer des 0x00000 sur l'I2S.
                 for(i_core1=0; i_core1<256; i_core1++) buffer_4_i2s[i_core1] = 0x00;
                 data_non_valides = true;
                 t_debut_data_invalides = time_us_64();
+                // Si pas de flash pour telecommande en cours sur D1
                 if ((time_us_64() - t_debut_led_telec) > 1.5E5)
                     {
                         liaison_eth_ok = false;
@@ -176,9 +132,9 @@ void core1_entry()
                         D3_OFF;                        
                     }
             }
-        else
+        else // Reception Ethernet OK
             {
-                // Si pas d'appui recent sur la telecommande
+                // Si pas de flash pour telecommande en cours sur D1
                 if ((time_us_64() - t_debut_led_telec) > 1.5E5)
                     {
                         D1_VERTE;
@@ -190,15 +146,18 @@ void core1_entry()
                     }
             }
 
+        // Si absence de sequence recue de la telecommande depuis 1.5 s
         if ((time_us_64() - t_debut_touche_1) > 1.5E6) touche1_tcde = TOUCHE_AUCUNE;
+        // Si reception d'une touche de la telecommande
         if (!pio_sm_is_rx_fifo_empty(pio1, rx_sm))
             { 
                 uint32_t rx_frame = pio_sm_get(pio1, rx_sm);
 
                 if (nec_decode_frame(rx_frame, &rx_address, &rx_data))
                     {            
-                        D1_OFF;
+                        D1_OFF; // flash par OFF de D1
                         t_debut_led_telec = time_us_64();
+                        // Si premiere touche tapee OK
                         if (    (rx_data == TOUCHE_CH_MOINS)
                             ||  (rx_data == TOUCHE_CH)
                             ||  (rx_data == TOUCHE_CH_PLUS))
@@ -207,7 +166,7 @@ void core1_entry()
                                     t_debut_touche_1 = time_us_64();
                                     touche2_tcde = TOUCHE_AUCUNE;
                                 }
-                        else
+                        else // Si seconde touche tapee (avec permiere touche OK)
                                 {
                                     touche2_tcde = rx_data;
                                 }
@@ -312,15 +271,18 @@ void core1_entry()
                                                             break;
                                     }
                             }
-                    //if (flg_maj_flash_data) pio_sm_set_enabled(pio1, rx_sm, false);                                                     
                     }
             }
 
-            if (!liaison_eth_ok) continue;
+            if (!liaison_eth_ok) continue; // On ne va pas au-dela si absence de reception Ethernet
 
-// Traitement des leds CLIPs
+// Traitement des LEDs d'etat des sortie:
 // Clignotement vert/blanc si le canal est en mute;
-// Clignotement rouge/vert de la led du canal R si somme des canaux sur la voie L.               
+// Clignotement rouge/vert de la led du canal R si somme des canaux sur la voie L;
+// Sinon vert selon la modulation et rouge en cas de clip.      
+// Les variables bascule_leds et t_debut_bascule_leds sont destinees a permettre le clignotement
+// (changement d'etat tous les 300 ms) des LEDs d'etats des sorties en blanc/vert (mute) ou
+// en vert/rouge (somme des canaux sur la sortie gauche).
             if ((time_us_64() - t_debut_bascule_leds) > 3E5)
                 {
                     t_debut_bascule_leds = time_us_64();
@@ -335,7 +297,7 @@ void core1_entry()
                                 {
                                     D3_ROUGE;
                                 }                        
-                            if ((!somme_des_canaux) && mute_r)
+                            if (mute_r && (!somme_des_canaux))
                                 {
                                     D3_VERTE;
                                 }                           
@@ -347,11 +309,11 @@ void core1_entry()
                                 {
                                     D2_OFF;
                                 }
-                            if (somme_des_canaux && (!mute_r))
+                            if (somme_des_canaux)
                                 {
                                     D3_VERTE;
                                 }
-                            if (mute_r)
+                            if (mute_r  && (!somme_des_canaux))
                                 {
                                     D3_OFF;
                                 }                            
@@ -509,12 +471,10 @@ void dma_handler() {
 
 
 int main() {
-    
-    flg_dbg = false;
 
-    stdio_init_all();
+    // LED integree au PICO 2 utilisee pour DEBUG 
+    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
 
-    //sleep_ms(20);
     sleep_ms(500);
 
     // LED D1 Etats sys
@@ -555,19 +515,10 @@ int main() {
     gpio_init(7); // Pour BP2
     gpio_set_dir(7, GPIO_IN);
 
-    //somme_des_canaux = false;
     flg_maj_flash_data = false;
-    //mute_l = true;
-    //mute_r = true;
-
-
-//core1_entry();
-
-    //sleep_ms(1000); // Laisser le temps au TDA7418 de s'initialiser.
 
     for(i=0; i<0x07; i++) flash_data[i] = flash_target_contents[i];
     if ((flash_data[0] != 0xAA) && (flash_data[1] != 0x55)) // Pas de configuration memorisee ?
-    //if (1)
         {   // Si non, on memorise une configuration. 
             flash_data[0] = 0xAA;
             flash_data[1] = 0x55;
@@ -654,16 +605,8 @@ int main() {
         false             // Don't start yet
     );
    
-    //channel_config_set_chain_to(&c1, dma_chan_4_i2s_2);
-    //channel_config_set_chain_to(&c2, dma_chan_4_i2s_1);
-
-    for(i=0; i<8; i++) // Pour que la machine ne soit pas bloquee
-        {              // le temps du demarrage du DMA.
-            pio_sm_put_blocking(pio0, sm_pio0_sm2, 0x00000000);
-        }
-    //pio_sm_set_enabled(pio0, sm_pio0_sm2, true);    
     pio_enable_sm_mask_in_sync(pio0, (1ULL << sm_pio0_sm0) | (1ULL << sm_pio0_sm1)  | (1ULL << sm_pio0_sm2));
-   dma_start_channel_mask(1u << dma_chan_4_i2s_1);
+    dma_start_channel_mask(1u << dma_chan_4_i2s_1);
 
     spi_init(spi1, 50000000);
     gpio_set_function(28, GPIO_FUNC_SPI);
@@ -674,8 +617,6 @@ int main() {
     gpio_set_function(16, GPIO_FUNC_SPI);
     gpio_set_function(18, GPIO_FUNC_SPI);
     gpio_set_function(19, GPIO_FUNC_SPI);
-    // Pour Picotool
-    //bi_decl(bi_4pins_with_func(16, 19, 18, 22, GPIO_FUNC_SPI));
 
     gpio_init(2); // /INT du W5500
     gpio_set_dir(2, GPIO_IN);
@@ -683,17 +624,6 @@ int main() {
     gpio_init(22); // /CS du W5500
     gpio_set_dir(22, GPIO_OUT);
     gpio_put(22, 1);    
-
-    /*
-    gpio_init(21); // /RESET du W5500
-    gpio_set_dir(21, GPIO_OUT);
-    gpio_put(21, 1);
-    sleep_ms(100);
-    gpio_put(21, 0);
-    sleep_ms(10);
-    gpio_put(21, 1);
-    sleep_ms(100);
-    */
 
     gpio_init(17); // /CS du W5500 de recopie
     gpio_set_dir(17, GPIO_OUT);
@@ -708,78 +638,24 @@ int main() {
     gpio_put(3, 1);
     sleep_ms(100);
 
-    //sleep_ms(2000);
-
     // Configuration generale du W5500
-    tampon_tx[0] = 0x00;
-    tampon_tx[1] = 0x00;
-    tampon_tx[2] = 0x04;
-    tampon_tx[3] = 0x00;
-    tampon_tx[4] = flash_data[1];
-    tampon_tx[5] = flash_data[2];
-    tampon_tx[6] = flash_data[3];
-    tampon_tx[7] = flash_data[4];
-    tampon_tx[8] = flash_data[5];
-    tampon_tx[9] = flash_data[6];
-    tampon_tx[10] = flash_data[7];
-    tampon_tx[11] = flash_data[8];
-    tampon_tx[12] = adresse_MAC[0];
-    tampon_tx[13] = adresse_MAC[1];
-    tampon_tx[14] = adresse_MAC[2];
-    tampon_tx[15] = adresse_MAC[3];
-    tampon_tx[16] = adresse_MAC[4];
-    tampon_tx[17] = adresse_MAC[5];
-    tampon_tx[18] = flash_data[9];
-    tampon_tx[19] = flash_data[10];
-    tampon_tx[20] = flash_data[11];
-    tampon_tx[21] = flash_data[12];   
+    buffer_tx_W5500[0] = 0x00;
+    buffer_tx_W5500[1] = 0x09;
+    buffer_tx_W5500[2] = 0x04;
+    buffer_tx_W5500[3] = adresse_MAC_srce[0];
+    buffer_tx_W5500[4] = adresse_MAC_srce[1];
+    buffer_tx_W5500[5] = adresse_MAC_srce[2];
+    buffer_tx_W5500[6] = adresse_MAC_srce[3];
+    buffer_tx_W5500[7] = adresse_MAC_srce[4];
+    buffer_tx_W5500[8] = adresse_MAC_srce[5];
     gpio_put(22, 0);
-    spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 22);       
+    spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 9);       
     gpio_put(22, 1);
-
-    // L'ordre d'ouverture des sockets est important pour laisser une
-    // taille maximale (16 Ko) au buffer de reception du W5500 de la
-    // socket 0. La taille de 1 Ko du buffer de reception de la socket 2
-    // est ramenee a 0 lors de l'affectation d'une taille de 16 Ko a la
-    // socket 0. Neanmoins, la socket 2 genere quand meme une IT sur reception.
-
-    // Configuration de la socket 1 (TCP de controle)
-    /*
-    W5500_ecrt_Sn_MR(1, 0x01); // TCP
-    W5500_ecrt_Sn_SRC_PORT(1, PORT_TCP); // Port 4114
-    tampon_tx[3] = 0x02; // Validation IT sur socket 1
-    W5500_SPI_ecrt_Frame(0x0018, 0x00, 1);
-    W5500_ecrt_Sn_IMR(1, 0x04); // IT sur reception TCP.
-    W5500_ecrt_Sn_RXBUF_SIZE(1, 1);
-    W5500_ecrt_Sn_TXBUF_SIZE(1, 1);
-    W5500_ecrt_Sn_CR(1, 0x01);// Ouverture de la socket 1
-    W5500_ecrt_Sn_CR(1, 0x02);// Listen sur la socket 1
-
-    // Configuration de la socket 2 (UDP multicast de controle)
-    W5500_ecrt_Sn_MR(2, 0x82); // Ecriture dans S2_MR : UDP multicast
-    //W5500_ecrt_Sn_SRC_PORT(2, PORT_TCP);
-    W5500_ecrt_Sn_SRC_PORT(2, 4114); // Port 4114
-    tampon_tx[3] = 0x06; // Validation IT sur les sockets 1 et 2
-    W5500_SPI_ecrt_Frame(0x0018, 0x00, 1);
-    W5500_ecrt_Sn_IMR(2, 0x04); // Validation IT sur reception sur la socket 2
-    W5500_ecrt_Sn_DEST_IP(2, flash_data[14], flash_data[15], flash_data[16], flash_data[17]);
-    //W5500_ecrt_Sn_DEST_PORT(2, PORT_TCP);// PORT de destination dans S2_DPORT
-    W5500_ecrt_Sn_DEST_PORT(2, 4114);// PORT de destination dans S2_DPORT
-    W5500_ecrt_Sn_RXBUF_SIZE(2, 1);
-    W5500_ecrt_Sn_TXBUF_SIZE(2, 1);
-    W5500_ecrt_Sn_CR(2, 0x01);// Ouverture de la socket 2
-    */
-
+    
      // Configuration de la socket 0 - UDP pour reception du stream audio
-    //W5500_ecrt_Sn_MR(0, flash_data[13]);// UDP, multicast, IGMP V2
     W5500_ecrt_Sn_MR(spi1, 22, 0, 0xF4);// MAC RAW avec filtrage
-    //W5500_ecrt_Sn_SRC_PORT(0, 0x1DE6);// PORT source (7654) sur la socket 0
-    // IP de destination dans S0_DIPR
-    //W5500_ecrt_Sn_DEST_IP(0, flash_data[14], flash_data[15], flash_data[16], flash_data[17]);
-    //W5500_ecrt_Sn_DEST_PORT(0, 0x1DE6);// PORT de destination dans S0_DPORT : 7654
     W5500_ecrt_Sn_RXBUF_SIZE(spi1, 22, 0, 16);
     W5500_ecrt_Sn_TXBUF_SIZE(spi1, 22, 0, 1);
-    tampon_tx[3] = 0x01; // Validation IT sur la socket 0
     W5500_SPI_ecrt_Frame(spi1, 22, 0x0018, 0x00, 1);
     W5500_ecrt_Sn_IMR(spi1, 22, 0, 0x04); // Validation IT sur reception sur la socket 0
     W5500_ecrt_Sn_CR(spi1, 22, 0, 0x01);// Ouverture de la socket 0
@@ -792,17 +668,14 @@ int main() {
 
     PTR_S0_RX_READ = 0x0000;
     PTR_S0_TX_WR = 0x0000;
-    compteur_48_octets = 0;
     flag_it_prec = flag_it;
     memset(buffer_4_i2s, 0x00, sizeof (buffer_4_i2s));
-    reception_ok = false;
 
     t_debut_clip_L = 0;
     t_debut_clip_L = 0;
     rx_sm = nec_rx_init(pio1, 13);
     multicore_launch_core1(core1_entry);
-    //sleep_ms(2000);
-
+   
     t_debut_wd_lien_eth = 0;
     liaison_eth_ok = false;
 
@@ -815,16 +688,10 @@ int main() {
             if (!gpio_get(2))
                 {
                     t_debut_wd_lien_eth = time_us_64();                    
-                    // On passe ici toutes les 500 µs
-                    //gpio_put(LED_PIN, gpio_get(LED_PIN)==1?0:1);  
                     W5500_ecrt_Sn_IR(spi1, 22, 0, 0x04); // Remonte de /INT
-                    // Point A
-                    // 200 µs du point A au point B,
-                    // Pour une période de 500 µs.   
-//gpio_put(LED_PIN, 1);                 
-                    tampon_tx[0] = PTR_S0_RX_READ>>8; // Lecture des donnees recues sur la socket 0
-                    tampon_tx[1] = PTR_S0_RX_READ;
-                    tampon_tx[2] = 0x18;                    
+                    buffer_tx_W5500[0] = PTR_S0_RX_READ>>8; // Lecture des donnees recues sur la socket 0
+                    buffer_tx_W5500[1] = PTR_S0_RX_READ;
+                    buffer_tx_W5500[2] = 0x18;                    
                     gpio_put(22, 0);
                     // Indice 3 : pF du nombre d'octets recus
                     // Indice 4 : pf du nombre d'octets recus
@@ -832,7 +699,7 @@ int main() {
                     //spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 593);
                     // 209 = 192 de data audio + nombre d'octets recus + 12 pour
                     // les @ MACs + 3 pour le protocole W5500.
-                    spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 401); // 401 pour 16 trames ADAT, 209 pour 8 trames ADAT
+                    spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 401); // 401 pour 16 trames ADAT, 209 pour 8 trames ADAT
                     gpio_put(22, 1);
                     // Point B
                     // 4.5 µs du point B au point C,
@@ -840,33 +707,33 @@ int main() {
                     //PTR_S0_RX_READ+=590;
                     // 206 octets recus:192 octets Data audio + 12 octets @MACs + numbre d'octets recus.                    
                     PTR_S0_RX_READ+=398; // 398 pour 16 trames ADAT, 206 pour 8 trames ADAT
-                    tampon_tx[0] = 0x00; // Offset:Mise a jour de S0_RX_RD
-                    tampon_tx[1] = 0x28;
-                    tampon_tx[2] = 0x0C;
-                    tampon_tx[3] = PTR_S0_RX_READ>>8;
-                    tampon_tx[4] = PTR_S0_RX_READ;
+                    buffer_tx_W5500[0] = 0x00; // Offset:Mise a jour de S0_RX_RD
+                    buffer_tx_W5500[1] = 0x28;
+                    buffer_tx_W5500[2] = 0x0C;
+                    buffer_tx_W5500[3] = PTR_S0_RX_READ>>8;
+                    buffer_tx_W5500[4] = PTR_S0_RX_READ;
                     gpio_put(22, 0);
-                    spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 5);
+                    spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 5);
                     gpio_put(22, 1);
-                    tampon_tx[0] = 0x00; // Offset: Validation de la lecture dans S0_CR
-                    tampon_tx[1] = 0x01;
-                    tampon_tx[2] = 0x0C;
-                    tampon_tx[3] = 0x40;
+                    buffer_tx_W5500[0] = 0x00; // Offset: Validation de la lecture dans S0_CR
+                    buffer_tx_W5500[1] = 0x01;
+                    buffer_tx_W5500[2] = 0x0C;
+                    buffer_tx_W5500[3] = 0x40;
                     gpio_put(22, 0);
-                    spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 4);
+                    spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 4);
                     gpio_put(22, 1);
 
                     // Reemission vers le W5500 de reopie.               
-                    tampon_rx[2] = PTR_S0_TX_WR>>8; // Ecriture sur la FIFO d'emission du W5500.
-                    tampon_rx[3] = PTR_S0_TX_WR;
-                    tampon_rx[4] = 0x14;
+                    buffer_rx_W5500[2] = PTR_S0_TX_WR>>8; // Ecriture sur la FIFO d'emission du W5500.
+                    buffer_rx_W5500[3] = PTR_S0_TX_WR;
+                    buffer_rx_W5500[4] = 0x14;
                     gpio_put(17, 0);
                     //spi_write_read_blocking(spi0, &tampon_rx[2], tampon_tx, 591);
                     // 207 = 192 de data audio + 12 pour les @ MACs 
                     // + 3 pour le protocole W5500.
                     // A partir de tampon_rx[2] pour ne pas envoyer le nombre
                     // d'octets recus.
-                    spi_write_read_blocking(spi0, &tampon_rx[2], tampon_tx, 399); // 399 pour 16 trames ADAT, // 207 pour 8 trames ADAT
+                    spi_write_read_blocking(spi0, &buffer_rx_W5500[2], buffer_tx_W5500, 399); // 399 pour 16 trames ADAT, // 207 pour 8 trames ADAT
                     gpio_put(17, 1);
 
                     //PTR_S0_TX_WR+=588;
@@ -874,21 +741,21 @@ int main() {
                     // 396 : 384 de donnees audio + 12 octets pour les @ MACs.
                     PTR_S0_TX_WR+=396;
 
-                    tampon_tx[0] = 0x00; // Offset:Mise a jour de PTR_S0_TX_WR
-                    tampon_tx[1] = 0x24;
-                    tampon_tx[2] = 0x0C;
-                    tampon_tx[3] = PTR_S0_TX_WR>>8;
-                    tampon_tx[4] = PTR_S0_TX_WR;
+                    buffer_tx_W5500[0] = 0x00; // Offset:Mise a jour de PTR_S0_TX_WR
+                    buffer_tx_W5500[1] = 0x24;
+                    buffer_tx_W5500[2] = 0x0C;
+                    buffer_tx_W5500[3] = PTR_S0_TX_WR>>8;
+                    buffer_tx_W5500[4] = PTR_S0_TX_WR;
                     gpio_put(17, 0);
-                    spi_write_read_blocking(spi0, tampon_tx, tampon_rx, 5);
+                    spi_write_read_blocking(spi0, buffer_tx_W5500, buffer_rx_W5500, 5);
                     gpio_put(17, 1);
 
-                    tampon_tx[0] = 0x00; // Offset: Validation de l'ecriture dans S0_CR
-                    tampon_tx[1] = 0x01;
-                    tampon_tx[2] = 0x0C;
-                    tampon_tx[3] = 0x20;
+                    buffer_tx_W5500[0] = 0x00; // Offset: Validation de l'ecriture dans S0_CR
+                    buffer_tx_W5500[1] = 0x01;
+                    buffer_tx_W5500[2] = 0x0C;
+                    buffer_tx_W5500[3] = 0x20;
                     gpio_put(17, 0);
-                    spi_write_read_blocking(spi0, tampon_tx, tampon_rx, 4);
+                    spi_write_read_blocking(spi0, buffer_tx_W5500, buffer_rx_W5500, 4);
                     gpio_put(17, 1);
 
                     if (data_non_valides) continue;
@@ -900,15 +767,15 @@ int main() {
                         {   
                             for(j = 17, i = 128; j<380; j+=24)                            
                                 {
-                                    echant1_int32 = tampon_rx[j + canal_ADAT_pour_voie_L + 2] << 16;
-                                    echant1_int32+= tampon_rx[j + canal_ADAT_pour_voie_L + 1] << 8;
-                                    echant1_int32+= tampon_rx[j + canal_ADAT_pour_voie_L];
+                                    echant1_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 2] << 16;
+                                    echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 1] << 8;
+                                    echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L];
                                     if (echant1_int32 & 0x800000)
                                         echant1_int32|=0xFF000000;
 
-                                    echant2_int32 = tampon_rx[j + canal_ADAT_pour_voie_R + 2] << 16;
-                                    echant2_int32+= tampon_rx[j + canal_ADAT_pour_voie_R + 1] << 8;
-                                    echant2_int32+= tampon_rx[j + canal_ADAT_pour_voie_R];
+                                    echant2_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_R + 2] << 16;
+                                    echant2_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_R + 1] << 8;
+                                    echant2_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_R];
                                     if (echant2_int32 & 0x800000)
                                         echant2_int32|=0xFF000000;
 
@@ -960,15 +827,15 @@ int main() {
                         {   
                             for(j = 17, i = 0; j<380; j+=24)
                                 {
-                                    echant1_int32 = tampon_rx[j + canal_ADAT_pour_voie_L + 2] << 16;
-                                    echant1_int32+= tampon_rx[j + canal_ADAT_pour_voie_L + 1] << 8;
-                                    echant1_int32+= tampon_rx[j + canal_ADAT_pour_voie_L];
+                                    echant1_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 2] << 16;
+                                    echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 1] << 8;
+                                    echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L];
                                     if (echant1_int32 & 0x800000)
                                         echant1_int32|=0xFF000000;
 
-                                    echant2_int32 = tampon_rx[j + canal_ADAT_pour_voie_R + 2] << 16;
-                                    echant2_int32+= tampon_rx[j + canal_ADAT_pour_voie_R + 1] << 8;
-                                    echant2_int32+= tampon_rx[j + canal_ADAT_pour_voie_R];
+                                    echant2_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_R + 2] << 16;
+                                    echant2_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_R + 1] << 8;
+                                    echant2_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_R];
                                     if (echant2_int32 & 0x800000)
                                         echant2_int32|=0xFF000000;
 
@@ -1019,7 +886,13 @@ int main() {
                 }
         if (flg_maj_flash_data)
                         {                            
-                            maj_flash_data();
+                            flash_data[0] = 0xAA;
+                            flash_data[1] = 0x55;
+                            flash_data[2] = canal_ADAT_pour_voie_L;
+                            flash_data[3] = canal_ADAT_pour_voie_R;
+                            flash_data[4] = somme_des_canaux ? 0xFF : 0x00;
+                            flash_data[5] = mute_l ? 0xFF : 0x00;
+                            flash_data[6] = mute_r ? 0xFF : 0x00;
                             pio_sm_set_enabled(pio0, sm_pio0_sm0, false);
                             multicore_reset_core1();
                             ints = save_and_disable_interrupts();

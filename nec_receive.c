@@ -5,32 +5,7 @@
  */
 
 // SDK types and declarations
-
-/*
-Codes telecommande Ebay:
-CH-	        0xA2
-CH	        0x62
-CH+	        0xE2
-PREV	    0x22
-NEXT	    0x02
-PLAY/PAUSE	0xC2
-VOL-	    0xE0
-VOL+	    0xA8
-EQ	        0x90
-0	        0x68
-100+	    0x98
-200+	    0xB0
-1	        0x30
-2	        0x18
-3	        0x7A
-4	        0x10
-5	        0x38
-6	        0x5A
-7	        0x42
-8	        0x4A
-9	        0x52
-*/
-
+//https://github.com/raspberrypi/pico-examples/tree/master/pio/ir_nec
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"    // for clock_get_hz()
