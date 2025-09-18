@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+// SDK types and declarations
+//https://github.com/raspberrypi/pico-examples/tree/master/pio/ir_nec
+
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 
@@ -12,6 +15,7 @@
 int nec_rx_init(PIO pio, uint pin);
 bool nec_decode_frame(uint32_t sm, uint8_t *p_address, uint8_t *p_data);
 
+// Codes des touches de la telecommande Ebay
 #define TOUCHE_CH_MOINS     0xA2
 #define TOUCHE_CH           0x62
 #define TOUCHE_CH_PLUS      0xE2

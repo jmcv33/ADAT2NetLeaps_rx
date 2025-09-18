@@ -1,0 +1,45 @@
+
+; rx_eth_pio0_sm2.pio
+; Raspberry PICO 2, RP2350
+; Auteur : jeanmarc.villers@wanadoo.fr
+; Machine PIO d'alimentation du DAC en donnees I2S. Sortie sur GPIO12.
+; Licence Creative Commons CC BY-NC-SA
+
+.program rx_eth_pio0_sm2
+
+    wait 1  GPIO    11 ; Attente du passage a 0 de LRCLK
+    wait 0  GPIO    11 ; pour une bonne synchro initiale sur LRCLK.
+.wrap_target 
+    set Y, 1
+    wait 0  GPIO    11 ; Attente de LRCLK=0 pour les 32 bits du canal gauche
+encore:                ; du DAC selon les specifications I2S
+    set X, 31 ; Compteur de bits (32) pour chaque canal du DAC
+loop:
+    wait 1  GPIO    10 ; Attente du passage a 0 de BCLK.
+    wait 0  GPIO    10
+    out PINS, 1
+    JMP X-- loop
+    wait 1  GPIO    11 ; Attente de LRCLK=1 pour les 32 bits du canal droit
+                       ; du DAC selon les specifications I2S
+    JMP Y-- encore
+.wrap
+
+% c-sdk {
+static inline void rx_eth_pio0_sm2_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = rx_eth_pio0_sm2_program_get_default_config(offset);
+
+    // Affecta&tion de GPIO12 sur l'instruction OUT
+    sm_config_set_out_pins(&c, 12, 1);
+    pio_sm_set_consecutive_pindirs(pio, sm, 12, 1, true);
+
+    // Set this pin's GPIO function (connect PIO to the pad)    
+    pio_gpio_init(pio, 12);
+    
+    sm_config_set_out_shift	(&c, false, true, 32);
+    // Configuration de la FIFO sur 8 mots de 32 bits
+    sm_config_set_fifo_join	(&c, PIO_FIFO_JOIN_TX);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

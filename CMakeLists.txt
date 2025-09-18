@@ -28,31 +28,30 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH C CXX ASM)
+project(eth_raw_rx_2_i2s_et_echo C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH.c Routines_W5500.c nec_receive.c)
+add_executable(eth_raw_rx_2_i2s_et_echo eth_raw_rx_2_i2s_et_echo.c w5500.c nec_receive.c)
 
-pico_set_program_name(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH "ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH")
-pico_set_program_version(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH "0.1")
+pico_set_program_name(eth_raw_rx_2_i2s_et_echo "eth_raw_rx_2_i2s_et_echo")
+pico_set_program_version(eth_raw_rx_2_i2s_et_echo "1.0")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH 0)
-pico_enable_stdio_usb(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH 0)
+pico_enable_stdio_uart(eth_raw_rx_2_i2s_et_echo 0)
+pico_enable_stdio_usb(eth_raw_rx_2_i2s_et_echo 0)
 
-pico_generate_pio_header(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm0.pio)
-pico_generate_pio_header(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm1.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm0.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm1.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm2.pio)
 
-pico_generate_pio_header(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio1_sm1.pio)
-
-pico_generate_pio_header(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH ${CMAKE_CURRENT_LIST_DIR}/nec_receive.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/nec_receive.pio)
 
 # Add the standard library to the build
-target_link_libraries(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH
+target_link_libraries(eth_raw_rx_2_i2s_et_echo
         pico_stdlib
         hardware_pio
         hardware_dma
@@ -62,9 +61,9 @@ target_link_libraries(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH
         )
 
 # Add the standard include files to the build
-target_include_directories(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH PRIVATE
+target_include_directories(eth_raw_rx_2_i2s_et_echo PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
-pico_add_extra_outputs(ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH)
+pico_add_extra_outputs(eth_raw_rx_2_i2s_et_echo)
 

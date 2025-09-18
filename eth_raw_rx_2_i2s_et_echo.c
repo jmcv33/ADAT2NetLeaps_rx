@@ -1,11 +1,10 @@
-// ETH_RAW_2_8_VOIES_ANALOGIQUES_avec_TX_ETH.c
+// eth_raw_rx_2_i2s_et_echo.c
 // Raspberry PICO 2, RP2350
 // Auteur : jeanmarc.villers@wanadoo.fr
 // Licence Creative Commons CC BY-NC-SA
 #include <string.h>
 #include <stdlib.h>
 #include "pico/stdlib.h"
-#include "rx_eth_pio1_sm1.pio.h"
 #include "hardware/spi.h"
 #include "hardware/dma.h"
 #include "hardware/flash.h"
@@ -13,19 +12,13 @@
 #include "pico/multicore.h"
 #include "rx_eth_pio0_sm0.pio.h"
 #include "rx_eth_pio0_sm1.pio.h"
-#include "Routines_W5500.h"
+#include "rx_eth_pio0_sm2.pio.h"
+#include "w5500.h"
 #include "nec_receive.h"
 #include "nec_receive.pio.h"
 
-uint8_t adresse_MAC_srce[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
-
 // MAC source. Tous les recepteurs ont cette MAC en MAC source.
-#define MAC_dest_pF 0x00
-#define MAC_dest_2  0x00
-#define MAC_dest_3  0x00
-#define MAC_dest_4  0x01
-#define MAC_dest_5  0x07
-#define MAC_dest_pf 0x15
+uint8_t adresse_MAC_srce[6] = {0x00, 0x00, 0x00, 0x01, 0x07, 0x15};
 
 // Commande des LEDs selon le boitier. Depend du sens des broches impossibles
 // a reperer... Important pour le rouge et le vert.
@@ -496,7 +489,6 @@ void dma_handler() {
         }              
 }
 
-
 int main() {
 
     // LED integree au PICO 2 utilisee pour DEBUG 
@@ -577,17 +569,17 @@ int main() {
     // PIO 0, machine 0 : Generation de MCLK et BCLK
     uint offset_pio0_sm0 = pio_add_program(pio0, &rx_eth_pio0_sm0_program);
     uint sm_pio0_sm0 = pio_claim_unused_sm(pio0, true);
-    pio0_sm0_program_init(pio0, sm_pio0_sm0, offset_pio0_sm0, 8);
+    pio0_sm0_program_init(pio0, sm_pio0_sm0, offset_pio0_sm0);
 
     // PIO 0, machine 1 : Generation de LRCLK
     uint offset_pio0_sm1 = pio_add_program(pio0, &rx_eth_pio0_sm1_program);
     uint sm_pio0_sm1 = pio_claim_unused_sm(pio0, true);
-    rx_eth_pio0_sm1_program_init(pio0, sm_pio0_sm1, offset_pio0_sm1, 11);
+    rx_eth_pio0_sm1_program_init(pio0, sm_pio0_sm1, offset_pio0_sm1);
 
     // PIO 0, machine 2 : Generation de la sortie de donnees I2S    
-    uint offset_pio0_sm2 = pio_add_program(pio0, &rx_eth_pio1_sm1_program);
+    uint offset_pio0_sm2 = pio_add_program(pio0, &rx_eth_pio0_sm2_program);
     uint sm_pio0_sm2 = pio_claim_unused_sm(pio0, true);
-    rx_eth_pio1_sm1_program_init(pio0, sm_pio0_sm2, offset_pio0_sm2, 12);
+    rx_eth_pio0_sm2_program_init(pio0, sm_pio0_sm2, offset_pio0_sm2);
 
     // Installation de deux canaux DMA chaines qui alimentent la sortie I2S
     // via la machine 2 du PIO0.

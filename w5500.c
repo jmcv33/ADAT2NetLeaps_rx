@@ -1,14 +1,17 @@
+// Routines_W5500.c
+// Raspberry PICO 2, RP2350
+// Auteur : jeanmarc.villers@wanadoo.fr
+// Licence Creative Commons CC BY-NC-SA
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "hardware/spi.h"
-//#include "pio_spi.h"
-#include "Routines_W5500.h"
+#include "w5500.h"
 
 extern uint8_t buffer_tx_W5500[], buffer_rx_W5500[];
 
 // L'appel de cette fonction impose d'affecter les octets de la phase de
 // donnees (voir doc du W5500) a partir de tampon_tx[3]. 
-void W5500_SPI_ecrt_Frame(spi_inst_t *spi, uint cs, uint16_t adresse, uint8_t controle, uint8_t nb_octet)
+void W5500_SPI_ecrt_Frame(spi_inst_t *spi, uint8_t cs, uint16_t adresse, uint8_t controle, uint8_t nb_octet)
 	{
 	 buffer_tx_W5500[0] = adresse>>8; 
 	 buffer_tx_W5500[1] = adresse;
@@ -20,7 +23,7 @@ void W5500_SPI_ecrt_Frame(spi_inst_t *spi, uint cs, uint16_t adresse, uint8_t co
 	 gpio_put(cs, 1);
 	}
 
-uint8_t W5500_lect_SIR(spi_inst_t *spi, uint cs)
+uint8_t W5500_lect_SIR(spi_inst_t *spi, uint8_t cs)
 	{buffer_tx_W5500[0] = 0x00; 
 	 buffer_tx_W5500[1] = 0x17;
 	 buffer_tx_W5500[2] = 0x00;
@@ -31,7 +34,7 @@ uint8_t W5500_lect_SIR(spi_inst_t *spi, uint cs)
 	 return (buffer_rx_W5500[3]);
 	 }	
 
-uint16_t W5500_lect_Sn_TX_WR_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket)
+uint16_t W5500_lect_Sn_TX_WR_PTR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -49,7 +52,7 @@ uint16_t W5500_lect_Sn_TX_WR_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket
 	return(m);
 	}
 	
-void W5500_ecrt_Sn_TX_WR_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t adresse)
+void W5500_ecrt_Sn_TX_WR_PTR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t adresse)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -64,7 +67,7 @@ void W5500_ecrt_Sn_TX_WR_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket, ui
 	 gpio_put(cs, 1); 	
 	}	
 	
-uint16_t W5500_lect_Sn_RX_RD_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket)
+uint16_t W5500_lect_Sn_RX_RD_PTR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -82,7 +85,7 @@ uint16_t W5500_lect_Sn_RX_RD_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket
 	 return(m);
 	}
 	
-void W5500_ecrt_Sn_RX_RD_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t adresse)
+void W5500_ecrt_Sn_RX_RD_PTR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t adresse)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -97,7 +100,7 @@ void W5500_ecrt_Sn_RX_RD_PTR(spi_inst_t *spi, uint cs, uint8_t numero_socket, ui
 	 gpio_put(cs, 1);	 
 	}	
 	
-uint16_t W5500_lect_Sn_TX_FREE_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket)
+uint16_t W5500_lect_Sn_TX_FREE_SIZE(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -115,7 +118,7 @@ uint16_t W5500_lect_Sn_TX_FREE_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_soc
 	 return(m);
 	}
 	
-uint16_t W5500_lect_Sn_RX_RECEIVED_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket)
+uint16_t W5500_lect_Sn_RX_RECEIVED_SIZE(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -133,7 +136,7 @@ uint16_t W5500_lect_Sn_RX_RECEIVED_SIZE(spi_inst_t *spi, uint cs, uint8_t numero
 	return(m);
 	}	
 
-void W5500_ecrt_Sn_MR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t commande)
+void W5500_ecrt_Sn_MR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t commande)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -147,7 +150,7 @@ void W5500_ecrt_Sn_MR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t c
 	 gpio_put(cs, 1);	 
 	}	
 	
-void W5500_ecrt_Sn_CR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t commande)
+void W5500_ecrt_Sn_CR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t commande)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -171,7 +174,7 @@ void W5500_ecrt_Sn_CR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t c
 		} while(buffer_rx_W5500[3]);
 	}
 
-void W5500_ecrt_no_wait_Sn_CR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t commande)
+void W5500_ecrt_no_wait_Sn_CR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t commande)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -185,7 +188,7 @@ void W5500_ecrt_no_wait_Sn_CR(spi_inst_t *spi, uint cs, uint8_t numero_socket, u
 	 gpio_put(cs, 1);	 
 	}	
 	
-uint8_t W5500_lect_Sn_SR(spi_inst_t *spi, uint cs, uint8_t numero_socket)
+uint8_t W5500_lect_Sn_SR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -199,7 +202,7 @@ uint8_t W5500_lect_Sn_SR(spi_inst_t *spi, uint cs, uint8_t numero_socket)
 	 return(buffer_rx_W5500[3]);
 	}
 
-void W5500_ecrt_Sn_RXBUF_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t taille)
+void W5500_ecrt_Sn_RXBUF_SIZE(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t taille)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -213,7 +216,7 @@ void W5500_ecrt_Sn_RXBUF_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket, u
 	 gpio_put(cs, 1);	
 	}
 
-void W5500_ecrt_Sn_TXBUF_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t taille)
+void W5500_ecrt_Sn_TXBUF_SIZE(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t taille)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -227,7 +230,7 @@ void W5500_ecrt_Sn_TXBUF_SIZE(spi_inst_t *spi, uint cs, uint8_t numero_socket, u
 	 gpio_put(cs, 1);	
 	}
 	
-void W5500_ecrt_Sn_SRC_PORT(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t numero_port)
+void W5500_ecrt_Sn_SRC_PORT(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t numero_port)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -242,7 +245,7 @@ void W5500_ecrt_Sn_SRC_PORT(spi_inst_t *spi, uint cs, uint8_t numero_socket, uin
 	 gpio_put(cs, 1);	
 	}
 	
-void W5500_ecrt_Sn_DEST_PORT(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint16_t numero_port)
+void W5500_ecrt_Sn_DEST_PORT(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint16_t numero_port)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -257,7 +260,7 @@ void W5500_ecrt_Sn_DEST_PORT(spi_inst_t *spi, uint cs, uint8_t numero_socket, ui
 	 gpio_put(cs, 1);	 
 	}
 	
-void W5500_ecrt_Sn_DEST_IP(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t ipFF, uint8_t ipFL, uint8_t ipLF, uint8_t ipLL)
+void W5500_ecrt_Sn_DEST_IP(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t ipFF, uint8_t ipFL, uint8_t ipLF, uint8_t ipLL)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -274,7 +277,7 @@ void W5500_ecrt_Sn_DEST_IP(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint
 	 gpio_put(cs, 1);	
 	}
 	
-void W5500_lect_Sn_DEST_IP(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t *ipFF, uint8_t *ipFL, uint8_t *ipLF, uint8_t *ipLL)
+void W5500_lect_Sn_DEST_IP(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t *ipFF, uint8_t *ipFL, uint8_t *ipLF, uint8_t *ipLL)
 	{uint16_t m;
 	
 	 buffer_tx_W5500[0] = 0x00; 
@@ -294,7 +297,7 @@ void W5500_lect_Sn_DEST_IP(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint
 	 *ipLL = buffer_rx_W5500[6];	
 	}
 	
-void W5500_ecrt_Sn_IMR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t masques)
+void W5500_ecrt_Sn_IMR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t masques)
 	{	
 	 buffer_tx_W5500[0] = 0x00; 
 	 buffer_tx_W5500[1] = 0x2C;
@@ -307,7 +310,7 @@ void W5500_ecrt_Sn_IMR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t 
 	 gpio_put(cs, 1);	
 	}	
 	
-void W5500_ecrt_Sn_IR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t flags)	
+void W5500_ecrt_Sn_IR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t flags)	
 	{	
 	 buffer_tx_W5500[0] = 0x00; 
 	 buffer_tx_W5500[1] = 0x02;
@@ -320,7 +323,7 @@ void W5500_ecrt_Sn_IR(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t f
 	 gpio_put(cs, 1);	
 	}
 
-uint8_t W5500_lect_Sn_IR(spi_inst_t *spi, uint cs, uint8_t numero_socket)	
+uint8_t W5500_lect_Sn_IR(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket)	
 	{buffer_tx_W5500[0] = 0x00; 
 	 buffer_tx_W5500[1] = 0x02;
 	 buffer_tx_W5500[2] = ((numero_socket * 4) + 1) << 3;
@@ -332,7 +335,7 @@ uint8_t W5500_lect_Sn_IR(spi_inst_t *spi, uint cs, uint8_t numero_socket)
 	 return(buffer_rx_W5500[3]);
 	}		
 			
-void W5500_ecrt_Sn_TX_Buffer(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t *buf, uint16_t nbre_octets)
+void W5500_ecrt_Sn_TX_Buffer(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t *buf, uint16_t nbre_octets)
 	{uint16_t adresse_base;
 	 while (W5500_lect_Sn_TX_FREE_SIZE(spi, cs, numero_socket) < nbre_octets);
 	 adresse_base = W5500_lect_Sn_TX_WR_PTR(spi, cs, numero_socket);
@@ -350,7 +353,7 @@ void W5500_ecrt_Sn_TX_Buffer(spi_inst_t *spi, uint cs, uint8_t numero_socket, ui
 	 W5500_ecrt_Sn_CR(spi, cs, numero_socket, 0x20); // Validation de l'ecriture sur la socket
 	}
 	
-void W5500_lect_Sn_RX_Buffer(spi_inst_t *spi, uint cs, uint8_t numero_socket, uint8_t *buf, uint16_t nbre_octets)
+void W5500_lect_Sn_RX_Buffer(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t *buf, uint16_t nbre_octets)
 	{uint16_t adresse_base;
 	 adresse_base = W5500_lect_Sn_RX_RD_PTR(spi, cs, numero_socket);	 
 	 buffer_tx_W5500[0] = adresse_base >> 8; 
@@ -364,3 +367,23 @@ void W5500_lect_Sn_RX_Buffer(spi_inst_t *spi, uint cs, uint8_t numero_socket, ui
 	 W5500_ecrt_Sn_RX_RD_PTR(spi, cs, numero_socket, adresse_base + nbre_octets);
 	 W5500_ecrt_Sn_CR(spi, cs, numero_socket, 0x40); // Validation de la lecture sur la socket
 	}
+
+void W5500_ecrt_Sn_DEST_MAC(spi_inst_t *spi, uint8_t cs, uint8_t numero_socket, uint8_t MACpF, uint8_t MAC4, uint8_t MAC3, uint8_t MAC2, uint8_t MAC1, uint8_t MACpf)
+	{uint16_t m;
+	
+	 buffer_tx_W5500[0] = 0x00; 
+	 buffer_tx_W5500[1] = 0x06;
+	 buffer_tx_W5500[2] = ((numero_socket * 4) + 1) << 3;
+	 buffer_tx_W5500[2]&= 0xF8;
+	 buffer_tx_W5500[2]|= 0x04;	 
+	 buffer_tx_W5500[3] = MACpF;
+	 buffer_tx_W5500[4] = MAC4;
+	 buffer_tx_W5500[5] = MAC3;
+	 buffer_tx_W5500[6] = MAC2;
+	 buffer_tx_W5500[7] = MAC1;
+	 buffer_tx_W5500[8] = MACpf;
+	 gpio_put(cs, 0);
+     spi_write_read_blocking(spi, buffer_tx_W5500, buffer_rx_W5500, 9);
+	 gpio_put(cs, 1);	
+	}
+	

@@ -1,0 +1,59 @@
+
+Donnees de configuration en flash data:
+Rang de l'octet     signification
+0                   0xAA, si absent, on fixe les valeurs pas defaut
+1                   0x55, si absent, on fixe les valeurs pas defaut
+2                   Canal en cours sur sortie analogique L, 0 par defaut
+3                   Canal en cours sur sortie analogique R, 3 par defaut
+4                   Si 0x00, pas de somme des canaux sur sortie analogique L, par defaut
+                    Si 0xFF, somme des canaux sur sortie analigique L en cours
+5                   Si 0x00, pas de mute sur la sortie analogique L
+                    Si 0xFF, mute en cours sur la sortie analogique L, par defaut
+6                   Si 0x00, pas de mute sur la sortie analogique R
+                    Si 0xFF, mute en cours sur la sortie analogique R, par defaut
+
+---------------------------------------------------------------
+
+Codes telecommande Ebay:
+CH-	        0xA2
+CH	        0x62
+CH+	        0xE2
+PREV	    0x22
+NEXT	    0x02
+PLAY/PAUSE	0xC2
+VOL-	    0xE0
+VOL+	    0xA8
+EQ	        0x90
+0	        0x68
+100+	    0x98
+200+	    0xB0
+1	        0x30
+2	        0x18
+3	        0x7A
+4	        0x10
+5	        0x38
+6	        0x5A
+7	        0x42
+8	        0x4A
+9	        0x52
+
+Fonctionnalites depuis la telecommande, toujours en 2 touches:
+'CH-' pour affecter le canal L:
+'1' à '8' : Selection du canal ADAT
+'9' : Addition du canal L en cours et du canal R en cours.
+      Suppression d'affectation sur R.
+      Clignotement vert/rouge sur la LED du canal R (1)
+      Mute sur la sortie droite 
+'-' : Mute
+'+' : Suppresion du Mute
+
+'CH' pour affecter les deux canaux:
+'-' : Mute
+'+' : Suppression du Mute
+
+'CH+' pour affecter le canal R:
+'1' à '8' : Selection du canal ADAT
+'-' : Mute
+'+' : Suppresion du Mute
+
+La LED d'un canal en mute clignote blanc/vert sauf (1)

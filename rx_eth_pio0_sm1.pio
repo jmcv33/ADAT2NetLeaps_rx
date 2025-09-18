@@ -1,15 +1,16 @@
+; rx_eth_pio0_sm1.pio
+; Raspberry PICO 2, RP2350
+; Auteur : jeanmarc.villers@wanadoo.fr
+; Machine PIO de generation de LRCLK (GPIO11) à 48 KHz a partir de BCLK (GPIO10)
+; Licence Creative Commons CC BY-NC-SA
 
 .program rx_eth_pio0_sm1
-// 17 instructions
-// Generation de LRCLK à 48 KHz
 
 .wrap_target ; 
-    
     wait 1  GPIO    10 ; Attente du passage a 0 de BCLK.
     wait 0  GPIO    10
     set PINS, 1 ; Mise a 1 de LRCLK
-    set Y, 1
-    nop [11]  ; Ajustement de la duree de l'etat haut.
+    nop [12]  ; Ajustement de la duree de l'etat haut.
     set X, 31
 loop: ; (X+1)x40#
     nop [31]
@@ -28,49 +29,17 @@ loop2: ; (X+1)x40#
 .wrap
 
 % c-sdk {
-static inline void rx_eth_pio0_sm1_program_init(PIO pio, uint sm, uint offset, uint pin) {
+static inline void rx_eth_pio0_sm1_program_init(PIO pio, uint sm, uint offset) {
     pio_sm_config c = rx_eth_pio0_sm1_program_get_default_config(offset);
 
-    // Map the state machine's OUT pin group to one pin, namely the `pin`
-    // parameter to this function.
-    //sm_config_set_out_pins(&c, pin, 3);
-    sm_config_set_set_pins(&c, pin, 1);
+    // Affectation de GPIO11 a l'instruction SET
+    sm_config_set_set_pins(&c, 11, 1);
     // Set the pin direction to output at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, 11, 1, true);
 
     // Set this pin's GPIO function (connect PIO to the pad)    
-    pio_gpio_init(pio, pin);
-    //pio_gpio_init(pio, pin+1);
-    //pio_gpio_init(pio, pin+2);
-    //pio_gpio_init(pio, pin+3);
+    pio_gpio_init(pio, 11);
     
-    //sm_config_set_clkdiv(&c, (float)(60));
-
-    //hw_set_bits(&pio->input_sync_bypass, 1u << 10);
-    
-
-    // Load our configuration, and jump to the start of the program
     pio_sm_init(pio, sm, offset, &c);
-    // Set the state machine running
-    //pio_sm_set_enabled(pio, sm, true);
 }
 %}
-/*
-  .wrap_target ; 
-    
-    set PINS, 1 ; Mise a 1 de LRCLK
-
-    set Y, 1
-
-loop2:
-    set X, 31 
-loop: ; (X+1)x40#
-    wait 1  GPIO    10 ; Attente du passage a 0 de BCLK.
-    wait 0  GPIO    10
-    JMP X-- loop
-
-    set PINS, 0 ; Mise a 0 de LRCLK
-    
-    JMP Y-- loop2
-.wrap
-*/
