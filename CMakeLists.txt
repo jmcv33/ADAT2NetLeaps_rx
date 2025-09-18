@@ -44,9 +44,9 @@ pico_set_program_version(eth_raw_rx_2_i2s_et_echo "1.0")
 pico_enable_stdio_uart(eth_raw_rx_2_i2s_et_echo 0)
 pico_enable_stdio_usb(eth_raw_rx_2_i2s_et_echo 0)
 
-pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm0.pio)
-pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm1.pio)
-pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/rx_eth_pio0_sm2.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/i2s_mclk_bclk_pio0_sm0.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/i2s_lrclk_pio0_sm1.pio)
+pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/i2s_data_pio0_sm2.pio)
 
 pico_generate_pio_header(eth_raw_rx_2_i2s_et_echo ${CMAKE_CURRENT_LIST_DIR}/nec_receive.pio)
 

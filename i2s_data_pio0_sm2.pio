@@ -1,11 +1,11 @@
 
-; rx_eth_pio0_sm2.pio
+; i2s_data_pio0_sm2.pio
 ; Raspberry PICO 2, RP2350
 ; Auteur : jeanmarc.villers@wanadoo.fr
 ; Machine PIO d'alimentation du DAC en donnees I2S. Sortie sur GPIO12.
 ; Licence Creative Commons CC BY-NC-SA
 
-.program rx_eth_pio0_sm2
+.program i2s_data_pio0_sm2
 
     wait 1  GPIO    11 ; Attente du passage a 0 de LRCLK
     wait 0  GPIO    11 ; pour une bonne synchro initiale sur LRCLK.
@@ -25,8 +25,8 @@ loop:
 .wrap
 
 % c-sdk {
-static inline void rx_eth_pio0_sm2_program_init(PIO pio, uint sm, uint offset) {
-    pio_sm_config c = rx_eth_pio0_sm2_program_get_default_config(offset);
+static inline void i2s_data_pio0_sm2_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = i2s_data_pio0_sm2_program_get_default_config(offset);
 
     // Affecta&tion de GPIO12 sur l'instruction OUT
     sm_config_set_out_pins(&c, 12, 1);

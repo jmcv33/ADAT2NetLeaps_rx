@@ -1,10 +1,10 @@
-; rx_eth_pio0_sm1.pio
+; i2s_lrclk_pio0_sm1.pio
 ; Raspberry PICO 2, RP2350
 ; Auteur : jeanmarc.villers@wanadoo.fr
 ; Machine PIO de generation de LRCLK (GPIO11) à 48 KHz a partir de BCLK (GPIO10)
 ; Licence Creative Commons CC BY-NC-SA
 
-.program rx_eth_pio0_sm1
+.program i2s_lrclk_pio0_sm1
 
 .wrap_target ; 
     wait 1  GPIO    10 ; Attente du passage a 0 de BCLK.
@@ -29,8 +29,8 @@ loop2: ; (X+1)x40#
 .wrap
 
 % c-sdk {
-static inline void rx_eth_pio0_sm1_program_init(PIO pio, uint sm, uint offset) {
-    pio_sm_config c = rx_eth_pio0_sm1_program_get_default_config(offset);
+static inline void i2s_lrclk_pio0_sm1_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = i2s_lrclk_pio0_sm1_program_get_default_config(offset);
 
     // Affectation de GPIO11 a l'instruction SET
     sm_config_set_set_pins(&c, 11, 1);
