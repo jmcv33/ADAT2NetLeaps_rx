@@ -60,8 +60,12 @@ uint8_t buffer_tx_W5500[512], buffer_rx_W5500[512];
 uint32_t i, i_core1, j;
 uint8_t buffer_4_i2s[256]; // 32 echantillons par voies
 uint32_t dma_chan_4_i2s_1, dma_chan_4_i2s_2;
+
+// Variables intermediaures pour les echantillons audio envoyes sur les sorties gauche et droite.
+// somme_echant_int32 utilise pour la sortie gauche en "MONO", mix des deux voies selectionnees.
 int32_t echant1_int32, echant2_int32, somme_echant_int32;
-bool flag_it, flag_it_prec;
+
+bool flag_it, flag_it_prec; // Selection partie basse 
 uint16_t PTR_S0_RX_READ, PTR_S0_TX_WR;
 
 // Toute configuration depuis la telecommande est memorisee en FLASH
@@ -74,19 +78,22 @@ uint16_t PTR_S0_RX_READ, PTR_S0_TX_WR;
 const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
 uint8_t  flash_data[FLASH_PAGE_SIZE];
 uint32_t ints; // Sauvegarde des ITs
-bool flg_maj_flash_data; 
+bool flag_maj_flash_data; 
 
+int32_t echant1_4_LED_int32, echant2_4_LED_int32, somme_echant_4_LED_int32;
 uint8_t niveau_L_core1, niveau_R_core1;
-bool stop_sortie_car_clip_L, stop_sortie_car_clip_R;
+bool flag_stop_sortie_L, flag_stop_sortie_R;
 uint64_t t_debut_clip_L, t_debut_clip_R, t_debut_bascule_leds;
-bool clip_L, clip_R;
-bool bascule_leds;
+bool flag_clip_L, flag_clip_R;
+bool flag_bascule_leds;
 
 uint64_t t_debut_data_invalides;
-bool data_non_valides; // Au cas ou des donnees "bidons" sont recues et
+bool flag_data_bruit; // Au cas ou des donnees "bidons" sont recues et
                        // causent des artefacts audio. Cela peut etre
-                       // cause par une mauvaise synchro ADAT sur l'emetteur.
-uint32_t rx_sm;
+                       // cause par une mauvaise synchro ADAT sur l'emetteur
+                       // provoque par exemple par un flux ADAT a 44.1 KHz au lieu de 48 KHz
+                       // Affecte a true aussi si pas de reception Ethernet.
+uint32_t machine_pio_telec;
 
 // canal_ADAT_pour_voie_L et canal_ADAT_pour_voie_R contiennent les offsets
 // dans le tampon du W5500 en reception,
@@ -94,15 +101,15 @@ uint32_t rx_sm;
 uint8_t canal_ADAT_pour_voie_L, canal_ADAT_pour_voie_R;
 
 uint8_t touche1_tcde, touche2_tcde;
-bool somme_des_canaux;
+bool flag_somme_canaux;
 uint64_t t_debut_touche_1, t_debut_led_telec;
-bool mute_l, mute_r;
+bool flag_mute_L, flag_mute_R;
 uint64_t t_debut_wd_lien_eth;
-bool liaison_eth_ok;
+bool flag_liaison_eth_ok;
 
 void core1_entry(void);
 
-// Code pour le core 1.
+// Code pour le core 1 : Supervision des operations
 // Traitement:
 // - des ordres de la telecommande - Voir notes.txt;
 // - des clips;
@@ -121,12 +128,12 @@ void core1_entry()
             {
                 // En vu d'envoyer des 0x00000 sur l'I2S.
                 for(i_core1=0; i_core1<256; i_core1++) buffer_4_i2s[i_core1] = 0x00;
-                data_non_valides = true;
+                flag_data_bruit = true;
                 t_debut_data_invalides = time_us_64();
                 // Si pas de flash pour telecommande en cours sur D1
                 if ((time_us_64() - t_debut_led_telec) > 1.5E5)
                     {
-                        liaison_eth_ok = false;
+                        flag_liaison_eth_ok = false;
                         D1_ROUGE;
                         D2_OFF;
                         D3_OFF;                        
@@ -134,24 +141,24 @@ void core1_entry()
             }
         else // Reception Ethernet OK
             {
-                // Si pas de flash pour telecommande en cours sur D1
+                // Si pas de flash dur D1 pour telecommande en cours
                 if ((time_us_64() - t_debut_led_telec) > 1.5E5)
                     {
                         D1_VERTE;
-                        liaison_eth_ok = true;
+                        flag_liaison_eth_ok = true;
                     }
                 if ((time_us_64() - t_debut_data_invalides) > 5.0E6)
                     {
-                        data_non_valides = false;
+                        flag_data_bruit = false;
                     }
             }
 
         // Si absence de sequence recue de la telecommande depuis 1.5 s
         if ((time_us_64() - t_debut_touche_1) > 1.5E6) touche1_tcde = TOUCHE_AUCUNE;
         // Si reception d'une touche de la telecommande
-        if (!pio_sm_is_rx_fifo_empty(pio1, rx_sm))
+        if (!pio_sm_is_rx_fifo_empty(pio1, machine_pio_telec))
             { 
-                uint32_t rx_frame = pio_sm_get(pio1, rx_sm);
+                uint32_t rx_frame = pio_sm_get(pio1, machine_pio_telec);
 
                 if (nec_decode_frame(rx_frame, &rx_address, &rx_data))
                     {            
@@ -176,45 +183,45 @@ void core1_entry()
                                 switch(touche2_tcde)
                                     {
                                         case TOUCHE_1 : canal_ADAT_pour_voie_L = 0;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_2 : canal_ADAT_pour_voie_L = 3;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_3 : canal_ADAT_pour_voie_L = 6;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_4 : canal_ADAT_pour_voie_L = 9;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_5 : canal_ADAT_pour_voie_L = 12;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_6 : canal_ADAT_pour_voie_L = 15;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_7 : canal_ADAT_pour_voie_L = 18;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_8 : canal_ADAT_pour_voie_L = 21;
-                                                        somme_des_canaux = false;
-                                                        flg_maj_flash_data = true;
+                                                        flag_somme_canaux = false;
+                                                        flag_maj_flash_data = true;
                                                         break;
-                                        case TOUCHE_9 : somme_des_canaux = true;
-                                                        flg_maj_flash_data = true;
+                                        case TOUCHE_9 : flag_somme_canaux = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
-                                        case TOUCHE_MOINS : mute_l = true;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_MOINS : flag_mute_L = true;
+                                                            flag_maj_flash_data = true;
                                                             break;
-                                        case TOUCHE_PLUS :  mute_l = false;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_PLUS :  flag_mute_L = false;
+                                                            flag_maj_flash_data = true;
                                                             break;
                                     }
                             }
@@ -224,34 +231,34 @@ void core1_entry()
                                 switch(touche2_tcde)
                                     {
                                         case TOUCHE_1 : canal_ADAT_pour_voie_R = 0;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_2 : canal_ADAT_pour_voie_R = 3;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_3 : canal_ADAT_pour_voie_R = 6;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_4 : canal_ADAT_pour_voie_R = 9;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_5 : canal_ADAT_pour_voie_R = 12;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_6 : canal_ADAT_pour_voie_R = 15;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_7 : canal_ADAT_pour_voie_R = 18;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;
                                         case TOUCHE_8 : canal_ADAT_pour_voie_R = 21;
-                                                        flg_maj_flash_data = true;
+                                                        flag_maj_flash_data = true;
                                                         break;                                    
-                                        case TOUCHE_MOINS : mute_r = true;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_MOINS : flag_mute_R = true;
+                                                            flag_maj_flash_data = true;
                                                             break;
-                                        case TOUCHE_PLUS :  mute_r = false;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_PLUS :  flag_mute_R = false;
+                                                            flag_maj_flash_data = true;
                                                             break;
                                     }
                             }
@@ -261,121 +268,133 @@ void core1_entry()
                                 switch(touche2_tcde)
                                     {
                                                                            
-                                        case TOUCHE_MOINS : mute_l = true;
-                                                            mute_r = true;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_MOINS : flag_mute_L = true;
+                                                            flag_mute_R = true;
+                                                            flag_maj_flash_data = true;
                                                             break;
-                                        case TOUCHE_PLUS :  mute_l = false;
-                                                            mute_r = false;
-                                                            flg_maj_flash_data = true;
+                                        case TOUCHE_PLUS :  flag_mute_L = false;
+                                                            flag_mute_R = false;
+                                                            flag_maj_flash_data = true;
                                                             break;
                                     }
                             }
                     }
             }
 
-            if (!liaison_eth_ok) continue; // On ne va pas au-dela si absence de reception Ethernet
+            if (!flag_liaison_eth_ok) continue; // On ne va pas au-dela si absence de reception Ethernet
 
 // Traitement des LEDs d'etat des sortie:
 // Clignotement vert/blanc si le canal est en mute;
-// Clignotement rouge/vert de la led du canal R si somme des canaux sur la voie L;
-// Sinon vert selon la modulation et rouge en cas de clip.      
+// Clignotement rouge/vert de la LED du canal R si somme des canaux sur la sortie L;
+// Sinon vert selon la modulation et rouge (100 ms) en cas de clip.      
 // Les variables bascule_leds et t_debut_bascule_leds sont destinees a permettre le clignotement
 // (changement d'etat tous les 300 ms) des LEDs d'etats des sorties en blanc/vert (mute) ou
 // en vert/rouge (somme des canaux sur la sortie gauche).
             if ((time_us_64() - t_debut_bascule_leds) > 3E5)
                 {
                     t_debut_bascule_leds = time_us_64();
-                    if (bascule_leds)
+                    if (flag_bascule_leds)
                             {
-                            bascule_leds = false;
-                            if (mute_l)
+                            flag_bascule_leds = false;
+                            if (flag_mute_L)
                                 {
                                     D2_VERTE;
                                 }
-                            if (somme_des_canaux)
+                            if (flag_somme_canaux)
                                 {
                                     D3_ROUGE;
                                 }                        
-                            if (mute_r && (!somme_des_canaux))
+                            if (flag_mute_R && (!flag_somme_canaux))
                                 {
                                     D3_VERTE;
                                 }                           
                             }
                     else
                         {
-                            bascule_leds = true;
-                            if (mute_l)
+                            flag_bascule_leds = true;
+                            if (flag_mute_L)
                                 {
                                     D2_OFF;
                                 }
-                            if (somme_des_canaux)
+                            if (flag_somme_canaux)
                                 {
                                     D3_VERTE;
                                 }
-                            if (mute_r  && (!somme_des_canaux))
+                            if (flag_mute_R  && (!flag_somme_canaux))
                                 {
                                     D3_OFF;
                                 }                            
                         }                        
                 }                        
-               
-            if (!somme_des_canaux)
+            // Evaluaion des niveaux audio
+            // En cas de clip sur une sortie, la LED correspondante est rouge pendant 100 ms
+            // et la sortie est OFF pendant 1 s.
+            if (!flag_somme_canaux)
                 {
-                    niveau_L_core1 = echant1_int32 >> 16;
-                    niveau_R_core1 = echant2_int32 >> 16;
+                    // Evaluation du niveau audio sur les 8 bits I2S de poid Fort uniquement.
+                    niveau_L_core1 = echant1_4_LED_int32 >> 16;
+                    niveau_R_core1 = echant2_4_LED_int32 >> 16;
                 }
             else
                 {
-                    niveau_L_core1 = somme_echant_int32 >> 16;
+                    niveau_L_core1 = somme_echant_4_LED_int32 >> 16;
                     niveau_R_core1 = 0x00;                    
                 }
-            if (!mute_l)
+            if (!flag_mute_L)
                 {
+                    // Reactivation de la sortie gauche au bout d'1 s
                     if ((time_us_64() - t_debut_clip_L) > 1E6)
                         {
-                            stop_sortie_car_clip_L = false;
+                            flag_stop_sortie_L = false;
                         }
+                    // Extinction du rouge sur la LED de la sortie gauche au bout de 100 ms
                     if ((time_us_64() - t_debut_clip_L) > 1E5)
                         {
-                            clip_L = false;
-                        }                                  
-                    if ((niveau_L_core1 & 0x80))
+                            flag_clip_L = false;
+                        }                       
+                        
+                    // I2S encode en complement a 2.
+                    // Cas de la sortie gauche.
+                    // Si la valeur est negative
+                    if (niveau_L_core1 & 0x80)
                                 {   
+                                    // Suppression du bit de signe
+                                    // et si valeur < 15, alors CLIP
                                     if ((niveau_L_core1 & 0x7F) < 15)
                                         {   
                                             D2_ROUGE;
-                                            stop_sortie_car_clip_L = true;
+                                            flag_stop_sortie_L = true;
                                             t_debut_clip_L = time_us_64();
-                                            clip_L = true;
+                                            flag_clip_L = true;
                                         }   
                                     else
                                         {
-                                            if (!clip_L)
+                                            if (!flag_clip_L)
                                                 {
+                                                    // Si presence modulation raisonnable
                                                     if ((niveau_L_core1 & 0x7F) < 127)
                                                         {
                                                             D2_VERTE;
                                                         }
                                                     else
-                                                        {
+                                                        {   // Si absence de modulation
                                                             D2_OFF;
                                                         }
                                                 }                                                                        
                                         }                             
                                 }
-                                else
+                                else // Idem mais dans le cas d'une valeur I2S positive.
                                     { 
                                         if (niveau_L_core1 > 112)
                                             {   
                                                 D2_ROUGE;
-                                                stop_sortie_car_clip_L = true;
+                                                flag_stop_sortie_L = true;
                                                 t_debut_clip_L = time_us_64();
-                                                clip_L = true;                    
+                                                flag_clip_L = true;                    
                                             }   
                                         else
                                             {   
-                                                if (!clip_L)
+                                                if (!flag_clip_L)
                                                     {
                                                         if ((niveau_L_core1 & 0x7F) > 1)
                                                             {
@@ -389,29 +408,29 @@ void core1_entry()
                                             }                               
                                     }
                 }
-
-            if ((!mute_r) && (!somme_des_canaux))
+            // Cas de la sortie droite
+            if ((!flag_mute_R) && (!flag_somme_canaux))
                 {
                     if ((time_us_64() - t_debut_clip_R) > 1E6)
                         {
-                            stop_sortie_car_clip_R = false;
+                            flag_stop_sortie_R = false;
                         }            
                     if ((time_us_64() - t_debut_clip_R) > 1E5)
                         {
-                            clip_R = false;
+                            flag_clip_R = false;
                         }
                     if ((niveau_R_core1 & 0x80))
                                 {   
                                     if ((niveau_R_core1 & 0x7F) < 15)
                                         {   
                                             D3_ROUGE;
-                                            stop_sortie_car_clip_R = true;
+                                            flag_stop_sortie_R = true;
                                             t_debut_clip_R = time_us_64();
-                                            clip_R = true;
+                                            flag_clip_R = true;
                                         }   
                                     else
                                         {
-                                            if (!clip_R)
+                                            if (!flag_clip_R)
                                                 {
                                                     if ((niveau_R_core1 & 0x7F) < 127)
                                                         {
@@ -429,13 +448,13 @@ void core1_entry()
                                         if (niveau_R_core1 > 112)
                                             {   
                                                 D3_ROUGE;
-                                                stop_sortie_car_clip_R = true;
+                                                flag_stop_sortie_R = true;
                                                 t_debut_clip_R = time_us_64();
-                                                clip_R = true;                    
+                                                flag_clip_R = true;                    
                                             }   
                                         else
                                             {
-                                                if (!clip_R)
+                                                if (!flag_clip_R)
                                                     {
                                                         if (niveau_R_core1 > 1)
                                                             {
@@ -452,17 +471,25 @@ void core1_entry()
         }
 }
 
+// Interruption declenchee a chaque fin de transfert d'un canal DMA.
 // Version pour 8 echantillons vers DAC. 2 (stereo) x 4 octets x 8 = 64 octets
 // envoyes par un canal DMA.
 void dma_handler() {
     if (!flag_it)
         {
+            // IT pour fin de transfert avec le DMA 1 qui lit la partie
+            // basse du buffer buffer_4_i2s.
             flag_it = true;
+            // Reinitialisation de la source d'IT.
             dma_hw->ints0 = 1u << dma_chan_4_i2s_1;
+            // Reinitialisation du pointeur a la base de la partie basse du buffer
+            // pour le prochain transfert par DMA1.
             dma_channel_set_read_addr(dma_chan_4_i2s_1, &buffer_4_i2s[0], false);
         }
     else
         {
+            // IT pour fin de transfert avec le DMA 2 qui lit la partie
+            // haute du buffer buffer_4_i2s.
             flag_it = false;
             dma_hw->ints0 = 1u << dma_chan_4_i2s_2;
             dma_channel_set_read_addr(dma_chan_4_i2s_2, &buffer_4_i2s[128], false);
@@ -509,17 +536,18 @@ int main() {
     gpio_init(15); // Pour l'oscillateur a 24.576 MHz
     gpio_set_dir(15, GPIO_IN);
 
-    gpio_init(6); // Pour BP1
+    gpio_init(6); // Pour BP1, inutilise (Bouton Poussoir)
     gpio_set_dir(6, GPIO_IN);
 
-    gpio_init(7); // Pour BP2
+    gpio_init(7); // Pour BP2, inutilise
     gpio_set_dir(7, GPIO_IN);
 
-    flg_maj_flash_data = false;
+    flag_maj_flash_data = false;
 
+    // Recuperation des donnees de configuration en flash
     for(i=0; i<0x07; i++) flash_data[i] = flash_target_contents[i];
     if ((flash_data[0] != 0xAA) && (flash_data[1] != 0x55)) // Pas de configuration memorisee ?
-        {   // Si non, on memorise une configuration. 
+        {   // Alors, on memorise une configuration par defaut
             flash_data[0] = 0xAA;
             flash_data[1] = 0x55;
             flash_data[2] = 0;
@@ -533,17 +561,17 @@ int main() {
             restore_interrupts (ints);
             canal_ADAT_pour_voie_L = 0;
             canal_ADAT_pour_voie_R = 3;
-            somme_des_canaux = false;
-            mute_l = true;
-            mute_r = true;
+            flag_somme_canaux = false;
+            flag_mute_L = true;
+            flag_mute_R = true;
         }
     else
-        {   
+        {   // Recuperation de la configuration en cours avant l'arret
             canal_ADAT_pour_voie_L = flash_data[2];
             canal_ADAT_pour_voie_R = flash_data[3];
-            somme_des_canaux = flash_data[4] == 0x00 ? false : true;
-            mute_l = flash_data[5] == 0x00 ? false : true;
-            mute_r = flash_data[6] == 0x00 ? false : true;
+            flag_somme_canaux = flash_data[4] == 0x00 ? false : true;
+            flag_mute_L = flash_data[5] == 0x00 ? false : true;
+            flag_mute_R = flash_data[6] == 0x00 ? false : true;
         }
 
     // PIO 0, machine 0 : Generation de MCLK et BCLK
@@ -580,10 +608,10 @@ int main() {
     dma_channel_configure(
         dma_chan_4_i2s_1,
         &c1,
-        &pio0_hw->txf[2], // Write address (only need to set this once)
-        &buffer_4_i2s[0], // A lire a la base du buffer,
-        32,            // 16 mots de 4 octets.
-        false             // Don't start yet
+        &pio0_hw->txf[2], // Ecriture sur la machine 2 du PIO 0 via la FIFO correspondante
+        &buffer_4_i2s[0], // Lecture sur la base du buffer,
+        32,               // 32 mots de 4 octets, soit 2 x 16 echantillons a 48 KHz d'echantillonnage
+        false             // Ne pas demarrer tout de suite
     );
 
     // DMA 2, envoi de la parie haute du buffer.
@@ -598,21 +626,23 @@ int main() {
     dma_channel_configure(
         dma_chan_4_i2s_2,
         &c2,
-        &pio0_hw->txf[2], // Write address (only need to set this once)
-        //&buffer_4_i2s[768],
-        &buffer_4_i2s[128], // A lire dans la seconde partie du buffer,
-        32,            // 16 mots de 4 octets.
-        false             // Don't start yet
+        &pio0_hw->txf[2],  // Ecriture sur la machine 2 du PIO 0 via la FIFO correspondante
+        &buffer_4_i2s[128],// Lecture sur la seconde moitie du buffer,
+        32,                // 32 mots de 4 octets, soit 2 x 16 echantillons a 48 KHz d'echantillonnage
+        false              // Ne pas demarrer tout de suite
     );
    
+    // Lancement synchronis des 3 machines du PIO0 pour generer les signaux I2S
     pio_enable_sm_mask_in_sync(pio0, (1ULL << sm_pio0_sm0) | (1ULL << sm_pio0_sm1)  | (1ULL << sm_pio0_sm2));
     dma_start_channel_mask(1u << dma_chan_4_i2s_1);
 
+    // Installation du SPI1 a 50 MHz pour le W5500 U1 du schema en reception du flux audio.
     spi_init(spi1, 50000000);
     gpio_set_function(28, GPIO_FUNC_SPI);
     gpio_set_function(26, GPIO_FUNC_SPI);
     gpio_set_function(27, GPIO_FUNC_SPI);
 
+    // Installation du SPI0 a 50 MHz pour le W5500 U2 du schema pour la reemission du flux audio.
     spi_init(spi0, 50000000); // W5500 de recopie.
     gpio_set_function(16, GPIO_FUNC_SPI);
     gpio_set_function(18, GPIO_FUNC_SPI);
@@ -638,7 +668,7 @@ int main() {
     gpio_put(3, 1);
     sleep_ms(100);
 
-    // Configuration generale du W5500
+    // Configuration generale du W5500 de reception. Seule l'adresse MAC est importante.
     buffer_tx_W5500[0] = 0x00;
     buffer_tx_W5500[1] = 0x09;
     buffer_tx_W5500[2] = 0x04;
@@ -652,7 +682,7 @@ int main() {
     spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 9);       
     gpio_put(22, 1);
     
-     // Configuration de la socket 0 - UDP pour reception du stream audio
+     // Configuration du W5500 en reception du flux audio
     W5500_ecrt_Sn_MR(spi1, 22, 0, 0xF4);// MAC RAW avec filtrage
     W5500_ecrt_Sn_RXBUF_SIZE(spi1, 22, 0, 16);
     W5500_ecrt_Sn_TXBUF_SIZE(spi1, 22, 0, 1);
@@ -673,41 +703,51 @@ int main() {
 
     t_debut_clip_L = 0;
     t_debut_clip_L = 0;
-    rx_sm = nec_rx_init(pio1, 13);
+
+    // Lancement de la machine du PIO1 pour la reception des trames de la telecommande
+    machine_pio_telec = nec_rx_init(pio1, 13);
+
     multicore_launch_core1(core1_entry);
    
     t_debut_wd_lien_eth = 0;
-    liaison_eth_ok = false;
+    flag_liaison_eth_ok = false;
 
-    data_non_valides = true;
+    flag_data_bruit = true;
     t_debut_data_invalides = time_us_64();
 
     // Boucle principale
     for(;;)
         {   
-            if (!gpio_get(2))
+            if (!gpio_get(2)) // Si reception sur le W5500, indique par sa ligne /INT
                 {
                     t_debut_wd_lien_eth = time_us_64();                    
                     W5500_ecrt_Sn_IR(spi1, 22, 0, 0x04); // Remonte de /INT
+
+                    // Lecture des donnees recues
                     buffer_tx_W5500[0] = PTR_S0_RX_READ>>8; // Lecture des donnees recues sur la socket 0
                     buffer_tx_W5500[1] = PTR_S0_RX_READ;
-                    buffer_tx_W5500[2] = 0x18;                    
-                    gpio_put(22, 0);
+                    buffer_tx_W5500[2] = 0x18;                                        
                     // Indice 3 : pF du nombre d'octets recus
                     // Indice 4 : pf du nombre d'octets recus
-                    // Indice 17 : Debut des datas.
-                    //spi_write_read_blocking(spi1, tampon_tx, tampon_rx, 593);
-                    // 209 = 192 de data audio + nombre d'octets recus + 12 pour
-                    // les @ MACs + 3 pour le protocole W5500.
+                    // Puis, selon la trame Ethernet :
+                    // Indice 5 : 6 octets d'adresse MAC destination
+                    // Indice 11 : 6 octets d'adresse MAC source
+                    // Indice 17 : Debut des 384 octets (16 trames ADAT) de donnees audio. 
+                    // Les deux octets du champ "type" d'une trame Ethernet (inutile car absence
+                    // d'usage des couches DoD superieures) contiennent les deux premiers octet
+                    // de donnees audio.
+                    // Un total de 398 octets sont donc lus dans le buffer de reception de la
+                    // socket 0 du W5500.
+                    gpio_put(22, 0);
                     spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 401); // 401 pour 16 trames ADAT, 209 pour 8 trames ADAT
                     gpio_put(22, 1);
-                    // Point B
-                    // 4.5 µs du point B au point C,
-                    // Pour une période de 500 µs.
-                    //PTR_S0_RX_READ+=590;
-                    // 206 octets recus:192 octets Data audio + 12 octets @MACs + numbre d'octets recus.                    
-                    PTR_S0_RX_READ+=398; // 398 pour 16 trames ADAT, 206 pour 8 trames ADAT
-                    buffer_tx_W5500[0] = 0x00; // Offset:Mise a jour de S0_RX_RD
+                    // Les 396 octets de donnees recues dans buffer_rx_W5500 vont etre renvoyees a
+                    // partir de l'indice 5 par le W5500 d'emission.
+                    // Les deux spi_write_read_blocking() suivants ne touchent pas a ces octets.
+                    
+                    // Mise a jour du pointeur de lecture dans le buffer.
+                    PTR_S0_RX_READ+=398;
+                    buffer_tx_W5500[0] = 0x00;
                     buffer_tx_W5500[1] = 0x28;
                     buffer_tx_W5500[2] = 0x0C;
                     buffer_tx_W5500[3] = PTR_S0_RX_READ>>8;
@@ -715,7 +755,9 @@ int main() {
                     gpio_put(22, 0);
                     spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 5);
                     gpio_put(22, 1);
-                    buffer_tx_W5500[0] = 0x00; // Offset: Validation de la lecture dans S0_CR
+
+                    // Validation de la lecture dans S0_CR
+                    buffer_tx_W5500[0] = 0x00;
                     buffer_tx_W5500[1] = 0x01;
                     buffer_tx_W5500[2] = 0x0C;
                     buffer_tx_W5500[3] = 0x40;
@@ -723,25 +765,21 @@ int main() {
                     spi_write_read_blocking(spi1, buffer_tx_W5500, buffer_rx_W5500, 4);
                     gpio_put(22, 1);
 
-                    // Reemission vers le W5500 de reopie.               
+                    // Reemission vers le W5500 de recopie.               
                     buffer_rx_W5500[2] = PTR_S0_TX_WR>>8; // Ecriture sur la FIFO d'emission du W5500.
                     buffer_rx_W5500[3] = PTR_S0_TX_WR;
-                    buffer_rx_W5500[4] = 0x14;
+                    buffer_rx_W5500[4] = 0x14;                    
+                    // Comme indique ci-dessus, utilisation de buffer_rx_W5500[] pour
+                    // envoyer les donnees (@MAC source, @MAC destination, 384 octets de 16 trames
+                    // ADAT) par le W5500 d'emission.
                     gpio_put(17, 0);
-                    //spi_write_read_blocking(spi0, &tampon_rx[2], tampon_tx, 591);
-                    // 207 = 192 de data audio + 12 pour les @ MACs 
-                    // + 3 pour le protocole W5500.
-                    // A partir de tampon_rx[2] pour ne pas envoyer le nombre
-                    // d'octets recus.
                     spi_write_read_blocking(spi0, &buffer_rx_W5500[2], buffer_tx_W5500, 399); // 399 pour 16 trames ADAT, // 207 pour 8 trames ADAT
                     gpio_put(17, 1);
 
-                    //PTR_S0_TX_WR+=588;
-                    // 204 : 192 de donnees audio + 12 octets pour les @ MACs.
-                    // 396 : 384 de donnees audio + 12 octets pour les @ MACs.
+                    // Mise a jour du pointeur du buffer d'emission du W5500
                     PTR_S0_TX_WR+=396;
 
-                    buffer_tx_W5500[0] = 0x00; // Offset:Mise a jour de PTR_S0_TX_WR
+                    buffer_tx_W5500[0] = 0x00;
                     buffer_tx_W5500[1] = 0x24;
                     buffer_tx_W5500[2] = 0x0C;
                     buffer_tx_W5500[3] = PTR_S0_TX_WR>>8;
@@ -750,7 +788,8 @@ int main() {
                     spi_write_read_blocking(spi0, buffer_tx_W5500, buffer_rx_W5500, 5);
                     gpio_put(17, 1);
 
-                    buffer_tx_W5500[0] = 0x00; // Offset: Validation de l'ecriture dans S0_CR
+                    // Validation de l'ecriture dans S0_CR
+                    buffer_tx_W5500[0] = 0x00;
                     buffer_tx_W5500[1] = 0x01;
                     buffer_tx_W5500[2] = 0x0C;
                     buffer_tx_W5500[3] = 0x20;
@@ -758,18 +797,29 @@ int main() {
                     spi_write_read_blocking(spi0, buffer_tx_W5500, buffer_rx_W5500, 4);
                     gpio_put(17, 1);
 
-                    if (data_non_valides) continue;
- 
+                    if (flag_data_bruit) continue;
+                    
+                    // Attente de passage a l'envoi de l'autre moitie du buffer buffer_4_i2s[]
+                    // vers l'I2S via le les canaux DMA et les machines du PIO0.
                     while (flag_it_prec == flag_it);
                     flag_it_prec = flag_it;
                     
                     if (!flag_it)
                         {   
+                            // Remplissage de la partie haute du buffer buffer_4_i2s[] depuis
+                            // les données recues sur le W5500.
+                            // j designe la base de 8 echantillons audio de 3 octets (24 bits) chacun
+                            // recus des 8 voies ADAT.
+                            // Rappels:
+                            // - canal_ADAT_pour_voie_L et canal_ADAT_pour_voie_R affectees dans core 1
+                            //   a partir de la telecommande;
+                            // - buffer_rx_W5500[] contient les echantillons audio de 16 trames ADAT.
                             for(j = 17, i = 128; j<380; j+=24)                            
                                 {
                                     echant1_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 2] << 16;
                                     echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 1] << 8;
                                     echant1_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_L];
+                                    // Propagation du bit de signe pour les echantillons negatifs
                                     if (echant1_int32 & 0x800000)
                                         echant1_int32|=0xFF000000;
 
@@ -779,11 +829,14 @@ int main() {
                                     if (echant2_int32 & 0x800000)
                                         echant2_int32|=0xFF000000;
 
-                                    if (somme_des_canaux)
+                                    // Affectations des echantillons pour la supervision par le core 1
+                                    echant1_4_LED_int32 = echant1_int32;
+                                    echant2_4_LED_int32 = echant2_int32;
+                                    somme_echant_4_LED_int32 = (echant1_int32>>1) + (echant2_int32>>1);
+
+                                    if (flag_somme_canaux)
                                         {
-                                            if (mute_l) echant1_int32 = 0L;
-                                            if (mute_r) echant2_int32 = 0L;
-                                            if (stop_sortie_car_clip_L)
+                                            if (flag_stop_sortie_L || flag_mute_L)
                                                 {
                                                     echant1_int32 = 0L;
                                                     echant2_int32 = 0L;
@@ -791,11 +844,11 @@ int main() {
                                         }
                                     else
                                         {
-                                            if (stop_sortie_car_clip_L || mute_l) echant1_int32 = 0L;
-                                            if (stop_sortie_car_clip_R || mute_r) echant2_int32 = 0L;
+                                            if (flag_stop_sortie_L || flag_mute_L) echant1_int32 = 0L;
+                                            if (flag_stop_sortie_R || flag_mute_R) echant2_int32 = 0L;
                                         }                                    
 
-                                    if (!somme_des_canaux)
+                                    if (!flag_somme_canaux)
                                         {
                                             buffer_4_i2s[i+3] = echant1_int32 >> 16;
                                             buffer_4_i2s[i+2] = echant1_int32 >> 8;
@@ -808,6 +861,9 @@ int main() {
                                         }
                                     else
                                         {
+                                            // Attenuation de 6 dB en cas de mode "MONO",
+                                            // somme (mix) des deux canaux selectionnes pour la sortie
+                                            // gauche
                                             echant1_int32>>=1;                                    
                                             echant2_int32>>=1;                                           
                                             
@@ -816,7 +872,7 @@ int main() {
                                             buffer_4_i2s[i+2] = somme_echant_int32 >> 8;
                                             buffer_4_i2s[i+1] = somme_echant_int32;
                                             i+=4;                               
-                                            buffer_4_i2s[i+3] = 0x00;
+                                            buffer_4_i2s[i+3] = 0x00; // Chut! sur la sortie droite
                                             buffer_4_i2s[i+2] = 0x00;
                                             buffer_4_i2s[i+1] = 0x00;                                                                            
                                             i+=4;
@@ -825,6 +881,9 @@ int main() {
                         }                            
                     else
                         {   
+                            // Remplissage de la partie basse du buffer buffer_4_i2s[] depuis
+                            // les données recues sur le W5500.
+                            // Memes commentaires que pour le remplissage de la partie haute
                             for(j = 17, i = 0; j<380; j+=24)
                                 {
                                     echant1_int32 = buffer_rx_W5500[j + canal_ADAT_pour_voie_L + 2] << 16;
@@ -838,12 +897,13 @@ int main() {
                                     echant2_int32+= buffer_rx_W5500[j + canal_ADAT_pour_voie_R];
                                     if (echant2_int32 & 0x800000)
                                         echant2_int32|=0xFF000000;
+                                    echant1_4_LED_int32 = echant1_int32;
+                                    echant2_4_LED_int32 = echant2_int32;
+                                    somme_echant_4_LED_int32 = (echant1_int32>>1) + (echant2_int32>>1);
 
-                                    if (somme_des_canaux)
+                                    if (flag_somme_canaux)
                                         {
-                                            if (mute_l) echant1_int32 = 0L;
-                                            if (mute_r) echant2_int32 = 0L;
-                                            if (stop_sortie_car_clip_L)
+                                            if (flag_stop_sortie_L || flag_mute_L)
                                                 {
                                                     echant1_int32 = 0L;
                                                     echant2_int32 = 0L;
@@ -851,11 +911,11 @@ int main() {
                                         }
                                     else
                                         {
-                                            if (stop_sortie_car_clip_L || mute_l) echant1_int32 = 0L;
-                                            if (stop_sortie_car_clip_R || mute_r) echant2_int32 = 0L;
+                                            if (flag_stop_sortie_L || flag_mute_L) echant1_int32 = 0L;
+                                            if (flag_stop_sortie_R || flag_mute_R) echant2_int32 = 0L;
                                         }
 
-                                    if (!somme_des_canaux)
+                                    if (!flag_somme_canaux)
                                         {
                                             buffer_4_i2s[i+3] = echant1_int32 >> 16;
                                             buffer_4_i2s[i+2] = echant1_int32 >> 8;
@@ -884,22 +944,26 @@ int main() {
                                 }                                                            
                         }                                                       
                 }
-        if (flg_maj_flash_data)
+        // Si une demande de modification de configuration a ete demandee au sein du core 1
+        // depuis la telecommande, memorisation en flash de la nouvelle configuration.
+        // Effectuer cette memorisation au sein du code sous core 1 provoque un plantage
+        // general (?). 
+        if (flag_maj_flash_data)
                         {                            
                             flash_data[0] = 0xAA;
                             flash_data[1] = 0x55;
                             flash_data[2] = canal_ADAT_pour_voie_L;
                             flash_data[3] = canal_ADAT_pour_voie_R;
-                            flash_data[4] = somme_des_canaux ? 0xFF : 0x00;
-                            flash_data[5] = mute_l ? 0xFF : 0x00;
-                            flash_data[6] = mute_r ? 0xFF : 0x00;
+                            flash_data[4] = flag_somme_canaux ? 0xFF : 0x00;
+                            flash_data[5] = flag_mute_L ? 0xFF : 0x00;
+                            flash_data[6] = flag_mute_R ? 0xFF : 0x00;
                             pio_sm_set_enabled(pio0, sm_pio0_sm0, false);
                             multicore_reset_core1();
                             ints = save_and_disable_interrupts();
                             flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
                             flash_range_program(FLASH_TARGET_OFFSET, flash_data, FLASH_PAGE_SIZE);
                             restore_interrupts (ints);
-                            flg_maj_flash_data = false; 
+                            flag_maj_flash_data = false; 
                             multicore_launch_core1(core1_entry);
                             pio_sm_set_enabled(pio0, sm_pio0_sm0, true);                                                                                
                         } 
