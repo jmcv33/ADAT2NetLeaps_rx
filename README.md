@@ -13,3 +13,4 @@ L'ensemble est présenté ici : https://youtu.be/pYdALltDKGU
 Contact : jeanmarc.villers@wanadoo.fr
 - Dépot pour l'émetteur : ADAT2NetLeaps_tx
 - Dépot pour un recepteur : ADAT2NetLeaps_rx
+![Exemple mise en oeuvre du système](exemple_mise_en_oeuvre.png "Exemple mise en oeuvre du système").
